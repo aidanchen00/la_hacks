@@ -239,6 +239,18 @@ function VoiceIntake() {
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ subject: "Your CareFlow Wellness Intake Summary", body: emailBody }),
         }).catch(() => {});
+
+        fetch("/api/twilio/sms", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            run_id,
+            summary: data.summary,
+            symptoms: data.symptoms?.join(", "),
+            urgency: data.urgency,
+            suggested_path: data.suggested_path,
+          }),
+        }).catch(() => {});
       }
 
       await session.end().catch(() => {});

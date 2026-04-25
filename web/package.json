@@ -30,6 +30,7 @@
     "socket.io-client": "^4.8.3",
     "three": "^0.183.2",
     "tsx": "^4.21.0",
+    "twilio": "^6.0.0",
     "zod": "^4.3.6"
   },
   "devDependencies": {
