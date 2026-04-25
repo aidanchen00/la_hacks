@@ -19,7 +19,7 @@ export const FIXTURE_ROUTING_DECISION = {
   requires_doctor_approval: false,
   rationale: "Persistent fever >3 days + sore throat warrants in-person evaluation for strep/mono.",
   disclaimers: [
-    "CareFlow is a wellness education tool, not a medical diagnosis service.",
+    "Prana is a wellness education tool, not a medical diagnosis service.",
     "Always consult a licensed healthcare professional for medical advice.",
   ],
 };

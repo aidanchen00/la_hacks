@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState, useCallback } from "react";
+import { useEffect, useRef, useState, useCallback, useMemo, Suspense } from "react";
 import { TokenSource, MediaDeviceFailure } from "livekit-client";
 import {
   useSession,
@@ -17,16 +17,58 @@ import {
 import { Track } from "livekit-client";
 import "@livekit/components-styles";
 import { postIntake, listRuns, type RunSummary } from "@/lib/api";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
+import { motion } from "motion/react";
+import { Clock, Globe, Settings, Check } from "lucide-react";
+
+type Lang = "en" | "es" | "zh";
+
+const LANG_LABELS: Record<Lang, string> = { en: "EN", es: "ES", zh: "中文" };
+
+const TRANSLATIONS = {
+  en: {
+    history: "History",
+    tagline: "Voice-first · Powered by AI agents",
+    startTalking: "Start talking",
+    typeSymptoms: "Or type your symptoms",
+    previewDemo: "Preview demo →",
+    disclaimer: "Prana is a wellness education tool — not a substitute for licensed medical care. For emergencies, call 911.",
+    speakNow: "Speak now — I'm listening…",
+    endSession: "End Session",
+  },
+  es: {
+    history: "Historial",
+    tagline: "Voz primero · Impulsado por agentes de IA",
+    startTalking: "Empieza a hablar",
+    typeSymptoms: "O escribe tus síntomas",
+    previewDemo: "Vista previa →",
+    disclaimer: "Prana es una herramienta educativa — no sustituye la atención médica. Para emergencias, llama al 911.",
+    speakNow: "Habla ahora — te estoy escuchando…",
+    endSession: "Terminar sesión",
+  },
+  zh: {
+    history: "历史记录",
+    tagline: "语音优先 · 由 AI 智能体提供支持",
+    startTalking: "开始说话",
+    typeSymptoms: "或输入您的症状",
+    previewDemo: "预览演示 →",
+    disclaimer: "Prana 是健康教育工具，不能替代专业医疗建议。紧急情况请拨打 911。",
+    speakNow: "请说话 — 我正在聆听…",
+    endSession: "结束会话",
+  },
+} as const;
+
+type Translations = typeof TRANSLATIONS[Lang];
 
 const URGENCY_COLORS: Record<string, string> = {
-  emergency: "#f87171", urgent: "#fb923c", routine: "#22d3ee", wellness: "#34d399",
+  emergency: "#DC2626", urgent: "#EA580C", routine: "#D97706", wellness: "#16A34A",
 };
-const PATH_ICONS: Record<string, string> = {
-  doctor: "🏥", pharmacy: "💊", mental_health: "🌊", alt_medicine: "🌿", self_care: "✨",
+const PATH_LABELS: Record<string, string> = {
+  doctor: "Doctor", pharmacy: "Pharmacy", mental_health: "Mental Wellness",
+  alt_medicine: "Alt. Medicine", self_care: "Self-Care",
 };
 
-function RecentSessions() {
+function RecentSessions({ onClose }: { onClose: () => void }) {
   const [runs, setRuns] = useState<RunSummary[]>([]);
   const router = useRouter();
 
@@ -36,64 +78,66 @@ function RecentSessions() {
       .catch(() => {});
   }, []);
 
-  if (!runs.length) return null;
-
   return (
-    <div style={{ width: "100%", maxWidth: 480 }}>
-      <div style={{ fontSize: 12, fontWeight: 600, color: "#475569", textTransform: "uppercase", letterSpacing: "0.07em", marginBottom: 10 }}>
-        Recent Sessions
+    <motion.div
+      initial={{ opacity: 0, y: 20 }}
+      animate={{ opacity: 1, y: 0 }}
+      className="flex flex-col h-full bg-[#F4F1EA]"
+    >
+      <div className="px-6 pt-6 pb-4 flex items-center gap-3">
+        <button
+          onClick={onClose}
+          className="text-[#1F3A2E] text-sm font-medium hover:opacity-70 transition-opacity"
+        >
+          ← Back
+        </button>
+        <h2 className="font-serif text-[#1F3A2E] text-xl font-medium">Your History</h2>
       </div>
-      <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-        {runs.map((run) => {
-          const label = run.rd_summary ?? run.intake_summary ?? run.instruction ?? "Intake session";
-          const icon = PATH_ICONS[run.recommended_path ?? ""] ?? "🩺";
-          const color = URGENCY_COLORS[run.urgency ?? ""] ?? "#64748b";
-          const date = new Date(run.created_at).toLocaleDateString(undefined, { month: "short", day: "numeric" });
-          return (
-            <button
-              key={run.id}
-              onClick={() => router.push(`/dashboard?run_id=${run.id}`)}
-              style={{
-                background: "var(--surface)",
-                border: "1px solid var(--border)",
-                borderRadius: 12,
-                padding: "12px 14px",
-                cursor: "pointer",
-                textAlign: "left",
-                display: "flex",
-                alignItems: "center",
-                gap: 10,
-                width: "100%",
-                transition: "border-color 0.15s",
-              }}
-            >
-              <span style={{ fontSize: 18, flexShrink: 0 }}>{icon}</span>
-              <div style={{ flex: 1, minWidth: 0 }}>
-                <div style={{ fontSize: 13, color: "#e2e8f0", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-                  {label.length > 72 ? label.slice(0, 72) + "…" : label}
-                </div>
-                <div style={{ fontSize: 11, color: "#64748b", marginTop: 2 }}>
-                  {date} · {(run.recommended_path ?? "pending").replace(/_/g, " ")}
-                </div>
-              </div>
-              {run.urgency && (
-                <span style={{
-                  fontSize: 10, fontWeight: 700, color, background: color + "20",
-                  borderRadius: 9999, padding: "2px 7px", whiteSpace: "nowrap", flexShrink: 0,
-                }}>
-                  {run.urgency}
-                </span>
-              )}
-              <span style={{ color: "#475569", fontSize: 12, flexShrink: 0 }}>→</span>
-            </button>
-          );
-        })}
+
+      <div className="flex-1 overflow-y-auto px-6 pb-8">
+        {runs.length === 0 ? (
+          <div className="flex flex-col items-center justify-center py-16 text-center">
+            <p className="text-[#6B7280] text-base">No sessions yet.</p>
+            <p className="text-[#6B7280] text-sm mt-1">Start a conversation to see your history here.</p>
+          </div>
+        ) : (
+          <div className="space-y-3 max-w-md mx-auto">
+            {runs.map((run) => {
+              const label = run.rd_summary ?? run.intake_summary ?? run.instruction ?? "Intake session";
+              const pathLabel = PATH_LABELS[run.recommended_path ?? ""] ?? "Pending";
+              const color = URGENCY_COLORS[run.urgency ?? ""] ?? "#6B7280";
+              const date = new Date(run.created_at).toLocaleDateString(undefined, { month: "short", day: "numeric" });
+              return (
+                <button
+                  key={run.id}
+                  onClick={() => router.push(`/dashboard?run_id=${run.id}`)}
+                  className="w-full text-left bg-[#EFEAE0] rounded-2xl p-4 border border-[#1F3A2E]/10 hover:border-[#1F3A2E]/30 transition-colors"
+                >
+                  <div className="flex items-start justify-between gap-3">
+                    <p className="text-[#3D3D3D] text-sm leading-relaxed flex-1 line-clamp-2">
+                      {label.length > 80 ? label.slice(0, 80) + "…" : label}
+                    </p>
+                    {run.urgency && (
+                      <span
+                        className="text-xs font-bold px-2.5 py-1 rounded-full whitespace-nowrap flex-shrink-0"
+                        style={{ color, background: color + "20" }}
+                      >
+                        {run.urgency}
+                      </span>
+                    )}
+                  </div>
+                  <p className="text-[#6B7280] text-xs mt-2">
+                    {date} · {pathLabel}
+                  </p>
+                </button>
+              );
+            })}
+          </div>
+        )}
       </div>
-    </div>
+    </motion.div>
   );
 }
-
-const tokenSource = TokenSource.endpoint("/api/token");
 
 interface IntakeData {
   summary?: string;
@@ -102,16 +146,18 @@ interface IntakeData {
   urgency?: string;
 }
 
-function RoomView({ onIntakeComplete }: { onIntakeComplete: (data: IntakeData) => void }) {
+function RoomView({ onIntakeComplete, t }: { onIntakeComplete: (data: IntakeData) => void; t: Translations }) {
   const agent = useAgent();
-  const [transcript, setTranscript] = useState<string[]>([]);
   const intakeRef = useRef<IntakeData>({});
+  const [liveTranscript, setLiveTranscript] = useState("");
 
   const onData = useCallback((msg: { payload: Uint8Array }) => {
     try {
       const text = new TextDecoder().decode(msg.payload);
       const data = JSON.parse(text);
-      if (data.type === "symptoms_extracted") {
+      if (data.type === "transcript_delta") {
+        setLiveTranscript((prev) => prev + (data.text ?? ""));
+      } else if (data.type === "symptoms_extracted") {
         intakeRef.current.symptoms = data.symptoms;
       } else if (data.type === "urgency_set") {
         intakeRef.current.urgency = data.urgency;
@@ -124,37 +170,102 @@ function RoomView({ onIntakeComplete }: { onIntakeComplete: (data: IntakeData) =
 
   useDataChannel(onData);
 
-  const stateColor = agent.state === "speaking" ? "#22d3ee"
-    : agent.state === "listening" ? "#34d399"
-    : agent.state === "thinking" ? "#f59e0b"
-    : "#475569";
+  const isListening = agent.state === "listening";
+  const isSpeaking = agent.state === "speaking";
 
   return (
-    <div className="flex flex-col items-center gap-8 w-full max-w-lg">
-      {/* Agent visualizer */}
-      <div className="relative w-64 h-64 rounded-full flex items-center justify-center"
-        style={{ background: "radial-gradient(circle, rgba(34,211,238,0.06) 0%, transparent 70%)", border: "1px solid rgba(34,211,238,0.12)" }}>
-        <BarVisualizer
-          state={agent.state}
-          barCount={9}
-          track={agent.microphoneTrack}
-          style={{ width: "60%", height: "40%" }}
+    <div className="flex flex-col h-full bg-[#F4F1EA] items-center justify-center px-6 py-8">
+
+      {/* Status label */}
+      <div className="flex items-center gap-2 mb-8">
+        <motion.div
+          className="w-1.5 h-1.5 rounded-full"
+          style={{ backgroundColor: isListening ? "#1F3A2E" : isSpeaking ? "#D97706" : "#6B7280" }}
+          animate={{ opacity: [1, 0.3, 1] }}
+          transition={{ duration: 2, repeat: Infinity }}
         />
-        <div className="absolute bottom-6 flex items-center gap-2 text-xs" style={{ color: "#64748b" }}>
-          <span className="w-2 h-2 rounded-full" style={{ backgroundColor: stateColor, boxShadow: `0 0 6px ${stateColor}` }} />
-          CareFlow · {agent.state ?? "connecting"}
-        </div>
+        <span className="text-[#1F3A2E] text-xs uppercase tracking-wider font-medium">
+          {agent.state ?? "connecting"}
+        </span>
       </div>
 
-      {/* Controls */}
-      <div className="flex items-center gap-3" data-lk-theme="default">
-        <TrackToggle
-          source={Track.Source.Microphone}
-          style={{ padding: "10px 20px", borderRadius: "9999px", background: "rgba(255,255,255,0.06)", color: "#cbd5e1", fontSize: 13, cursor: "pointer", border: "none" }}
+      {/* Orb with BarVisualizer */}
+      <motion.div
+        className="relative w-72 h-72"
+        animate={{ scale: isListening ? 1.18 : 1 }}
+        transition={{ duration: 0.4, ease: "easeInOut" }}
+      >
+        {/* Outer glow */}
+        <motion.div
+          className="absolute inset-0 rounded-full blur-3xl"
+          style={{ backgroundColor: "rgba(31,58,46,0.10)" }}
+          animate={{
+            opacity: isListening ? [0.5, 0.8, 0.5] : [0.3, 0.5, 0.3],
+            scale: isListening ? [1, 1.15, 1] : [1, 1.05, 1],
+          }}
+          transition={{ duration: isListening ? 1.2 : 3, repeat: Infinity, ease: "easeInOut" }}
         />
-        <DisconnectButton style={{ padding: "10px 20px", borderRadius: "9999px", background: "rgba(239,68,68,0.15)", color: "#f87171", fontSize: 13, cursor: "pointer", border: "none" }}>
-          End Session
-        </DisconnectButton>
+        {/* Main orb */}
+        <motion.div
+          className="absolute inset-12 rounded-full flex items-center justify-center overflow-hidden shadow-2xl"
+          style={{ background: "radial-gradient(circle at 40% 40%, #2A4D3D, #1F3A2E)" }}
+          animate={{ opacity: [0.9, 1, 0.9] }}
+          transition={{ duration: 3, repeat: Infinity, ease: "easeInOut" }}
+        >
+          <BarVisualizer
+            state={agent.state}
+            barCount={9}
+            track={agent.microphoneTrack}
+            style={{ width: "60%", height: "40%" }}
+          />
+        </motion.div>
+        {/* Inner glow */}
+        <motion.div
+          className="absolute inset-16 rounded-full pointer-events-none blur-2xl"
+          style={{ backgroundColor: "rgba(42,77,61,0.40)" }}
+          animate={{ opacity: isListening ? [0.7, 1, 0.7] : [0.5, 0.8, 0.5] }}
+          transition={{ duration: isListening ? 1.2 : 3, repeat: Infinity, ease: "easeInOut" }}
+        />
+      </motion.div>
+
+      {/* Transcript + controls */}
+      <div className="mt-10 w-full max-w-md space-y-4">
+        <motion.div
+          initial={{ opacity: 0, y: 20 }}
+          animate={{ opacity: 1, y: 0 }}
+          className="bg-[#EFEAE0] rounded-3xl p-6"
+        >
+          <p className="text-[#3D3D3D] text-base leading-relaxed min-h-[60px]">
+            {liveTranscript || (
+              <span className="text-[#6B7280]">{t.speakNow}</span>
+            )}
+            <motion.span
+              className="inline-block w-0.5 h-4 bg-[#1F3A2E] ml-1 align-middle"
+              animate={{ opacity: [1, 0] }}
+              transition={{ duration: 0.8, repeat: Infinity }}
+            />
+          </p>
+        </motion.div>
+
+        <div className="flex items-center justify-center gap-3" data-lk-theme="default">
+          <TrackToggle
+            source={Track.Source.Microphone}
+            style={{
+              padding: "10px 22px", borderRadius: "9999px",
+              background: "rgba(31,58,46,0.08)", color: "#1F3A2E",
+              fontSize: 13, cursor: "pointer", border: "1px solid rgba(31,58,46,0.2)",
+              fontFamily: "inherit",
+            }}
+          />
+          <DisconnectButton style={{
+            padding: "10px 22px", borderRadius: "9999px",
+            background: "rgba(220,38,38,0.08)", color: "#DC2626",
+            fontSize: 13, cursor: "pointer", border: "1px solid rgba(220,38,38,0.2)",
+            fontFamily: "inherit",
+          }}>
+            {t.endSession}
+          </DisconnectButton>
+        </div>
       </div>
 
       <RoomAudioRenderer />
@@ -162,7 +273,18 @@ function RoomView({ onIntakeComplete }: { onIntakeComplete: (data: IntakeData) =
   );
 }
 
-function VoiceIntake() {
+function VoiceIntake({ onShowHistory }: { onShowHistory: () => void }) {
+  const [language, setLanguage] = useState<Lang>("en");
+  const [langOpen, setLangOpen] = useState(false);
+  const langRef = useRef<Lang>("en");
+  langRef.current = language;
+
+  const tokenSource = useMemo(
+    () => TokenSource.endpoint(`/api/token?lang=${language}`),
+    [language]
+  );
+
+  const t = TRANSLATIONS[language];
   const session = useSession(tokenSource);
   const [started, setStarted] = useState(false);
   const [submitting, setSubmitting] = useState(false);
@@ -177,7 +299,6 @@ function VoiceIntake() {
         voice_session_id: (session as { roomName?: string }).roomName ?? undefined,
       });
 
-      // Fire composio tasks in background
       fetch("/api/composio/sheets", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -198,7 +319,7 @@ function VoiceIntake() {
           <p><strong>Suggested path:</strong> ${data.suggested_path ?? "review dashboard"}</p>
           <p><strong>Urgency:</strong> ${data.urgency ?? "wellness"}</p>
           <hr/>
-          <p><em>CareFlow is a wellness education and care-navigation tool. This is not a medical diagnosis. Please consult a licensed healthcare professional for medical advice.</em></p>
+          <p><em>Prana is a wellness education and care-navigation tool. This is not a medical diagnosis. Please consult a licensed healthcare professional for medical advice.</em></p>
         `;
         fetch("/api/composio/email", {
           method: "POST",
@@ -226,48 +347,147 @@ function VoiceIntake() {
     alert("Microphone access required. Please grant mic permissions and reload.");
   }, []);
 
+  if (submitting) {
+    return (
+      <div className="flex flex-col h-full items-center justify-center bg-[#F4F1EA]">
+        <motion.div
+          animate={{ opacity: [0.5, 1, 0.5] }}
+          transition={{ duration: 2, repeat: Infinity }}
+          className="font-serif text-[#1F3A2E] text-2xl font-medium text-center px-8"
+        >
+          Saving your intake summary…
+        </motion.div>
+      </div>
+    );
+  }
+
+  if (started) {
+    return (
+      <SessionProvider session={session}>
+        <RoomView onIntakeComplete={handleIntakeComplete} t={t} />
+      </SessionProvider>
+    );
+  }
+
   return (
     <SessionProvider session={session}>
-      <div className="flex flex-col items-center gap-8 w-full px-6">
-        {/* Disclaimer banner */}
-        <div style={{ background: "rgba(245,158,11,0.08)", border: "1px solid rgba(245,158,11,0.2)", borderRadius: 12, padding: "12px 20px", fontSize: 13, color: "#92400e", maxWidth: 480, textAlign: "center" }}>
-          ⚠️ CareFlow is a <strong>wellness education tool</strong> — not a substitute for licensed medical care. For emergencies, call <strong>911</strong>.
-        </div>
+      <div className="flex flex-col min-h-screen bg-[#F4F1EA]">
 
-        {started ? (
-          submitting ? (
-            <div style={{ color: "#22d3ee", fontSize: 18 }}>Saving your intake summary…</div>
-          ) : (
-            <RoomView onIntakeComplete={handleIntakeComplete} />
-          )
-        ) : (
-          <div className="flex flex-col items-center gap-6" style={{ textAlign: "center" }}>
-            <div style={{ fontSize: 64 }}>🩺</div>
-            <h2 style={{ fontSize: 24, fontWeight: 700, margin: 0 }}>Tell me about your health</h2>
-            <p style={{ color: "#64748b", maxWidth: 360, margin: 0, lineHeight: 1.6 }}>
-              Start a voice session and speak naturally about your symptoms, stress, or wellness goals. CareFlow will listen and guide you to the right resources.
-            </p>
-            <button className="btn-primary" onClick={() => setStarted(true)} style={{ fontSize: 16, padding: "14px 36px" }}>
-              Begin Voice Intake
+        {/* Top bar */}
+        <nav className="flex items-center justify-end px-6 pt-5 pb-3 md:px-10 md:pt-6">
+          <div className="flex items-center gap-2">
+            <button
+              onClick={onShowHistory}
+              className="flex items-center gap-1.5 px-3 py-2 rounded-full border border-[#1F3A2E]/20 text-[#3D3D3D] text-sm hover:border-[#1F3A2E]/40 transition-colors"
+            >
+              <Clock className="w-3.5 h-3.5" />
+              <span className="hidden sm:inline">{t.history}</span>
+            </button>
+
+            {/* Language dropdown */}
+            <div className="relative">
+              <button
+                onClick={() => setLangOpen((o) => !o)}
+                className="flex items-center gap-1 px-3 py-2 rounded-full border border-[#1F3A2E]/20 text-[#3D3D3D] text-sm hover:border-[#1F3A2E]/40 transition-colors"
+              >
+                <Globe className="w-3.5 h-3.5" />
+                <span>{LANG_LABELS[language]}</span>
+                <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                </svg>
+              </button>
+              {langOpen && (
+                <div className="absolute right-0 top-full mt-1 bg-white rounded-xl border border-[#1F3A2E]/10 shadow-lg py-1 z-50 min-w-[100px]">
+                  {(["en", "es", "zh"] as Lang[]).map((l) => (
+                    <button
+                      key={l}
+                      onClick={() => { setLanguage(l); setLangOpen(false); }}
+                      className={`w-full text-left px-4 py-2 text-sm transition-colors hover:bg-[#F4F1EA] ${language === l ? "text-[#1F3A2E] font-semibold" : "text-[#3D3D3D]"}`}
+                    >
+                      {LANG_LABELS[l]}
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
+
+            <button className="flex items-center gap-1.5 p-2 rounded-full border border-[#1F3A2E]/20 text-[#3D3D3D] hover:border-[#1F3A2E]/40 transition-colors">
+              <Settings className="w-4 h-4" />
             </button>
           </div>
-        )}
+        </nav>
+
+        {/* Main content — Prana centered */}
+        <div className="flex-1 flex flex-col items-center justify-center px-6 py-8">
+          <motion.div
+            initial={{ opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.6 }}
+            className="text-center space-y-6 w-full max-w-sm md:max-w-lg"
+          >
+            <span className="font-serif text-[#1F3A2E] text-7xl md:text-8xl font-medium tracking-tight">
+              Prana
+            </span>
+            <div className="flex justify-center">
+              <div className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-[#7BA8A3]/15">
+                <Check className="w-3.5 h-3.5 text-[#7BA8A3]" />
+                <span className="text-xs text-[#3D3D3D]">{t.tagline}</span>
+              </div>
+            </div>
+          </motion.div>
+        </div>
+
+        {/* Bottom CTA */}
+        <div className="px-6 pb-10 md:pb-14 w-full">
+          <div className="max-w-sm md:max-w-md mx-auto space-y-3">
+            <motion.button
+              onClick={() => setStarted(true)}
+              whileHover={{ scale: 1.01 }}
+              whileTap={{ scale: 0.99 }}
+              className="w-full bg-[#1F3A2E] text-white py-5 rounded-full font-medium text-lg hover:bg-[#2A4D3D] transition-colors"
+            >
+              {t.startTalking}
+            </motion.button>
+            <div className="flex items-center justify-center gap-4">
+              <button className="text-[#3D3D3D] text-sm hover:text-[#1F3A2E] transition-colors">
+                {t.typeSymptoms}
+              </button>
+              <span className="text-[#6B7280] text-xs">·</span>
+              <a
+                href="/dashboard?run_id=demo"
+                className="text-[#6B7280] text-sm hover:text-[#1F3A2E] transition-colors"
+              >
+                {t.previewDemo}
+              </a>
+            </div>
+            <p className="text-center text-xs text-[#6B7280] px-4 pt-1">{t.disclaimer}</p>
+          </div>
+        </div>
+
       </div>
     </SessionProvider>
   );
 }
 
+function HomePageInner() {
+  const params = useSearchParams();
+  const [showHistory, setShowHistory] = useState(params.get("history") === "true");
+
+  return (
+    <main style={{ minHeight: "100vh", display: "flex", flexDirection: "column" }}>
+      {showHistory ? (
+        <RecentSessions onClose={() => setShowHistory(false)} />
+      ) : (
+        <VoiceIntake onShowHistory={() => setShowHistory(true)} />
+      )}
+    </main>
+  );
+}
+
 export default function HomePage() {
   return (
-    <main style={{ minHeight: "100vh", display: "flex", flexDirection: "column", alignItems: "center", padding: "40px 20px", gap: 32 }}>
-      <div style={{ textAlign: "center", marginBottom: 8 }}>
-        <h1 style={{ fontSize: 36, fontWeight: 800, margin: 0, letterSpacing: "-0.02em" }}>
-          <span style={{ color: "#22d3ee" }}>Care</span>Flow
-        </h1>
-        <p style={{ color: "#64748b", marginTop: 8, fontSize: 15 }}>Voice-first wellness navigation · Powered by AI agents</p>
-      </div>
-      <VoiceIntake />
-      <RecentSessions />
-    </main>
+    <Suspense fallback={null}>
+      <HomePageInner />
+    </Suspense>
   );
 }

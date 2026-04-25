@@ -2,6 +2,7 @@
 
 import { useEffect, useState, useRef } from "react";
 import { useParams, useRouter } from "next/navigation";
+import { motion } from "motion/react";
 
 interface SessionInfo {
   agent: string;
@@ -76,73 +77,120 @@ export default function DoctorPage() {
     return () => {
       const ids = sessions.map((s) => s.sessionId).filter(Boolean);
       if (ids.length) {
-        fetch("/api/browser/stop", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ sessionIds: ids }) }).catch(() => {});
+        fetch("/api/browser/stop", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ sessionIds: ids }),
+        }).catch(() => {});
       }
     };
   }, [sessions]);
 
-  const statusColor = (s: SessionInfo) =>
-    s.done ? "#34d399" : s.status === "error" ? "#f87171" : "#22d3ee";
+  const statusDot = (s: SessionInfo) =>
+    s.done ? "#16A34A" : s.status === "error" ? "#DC2626" : "#D97706";
+
+  const statusLabel = (s: SessionInfo) =>
+    s.done ? "Complete" : s.status === "error" ? "Failed" : "Searching…";
 
   return (
-    <div style={{ minHeight: "100vh", padding: "32px 24px", maxWidth: 1100, margin: "0 auto" }}>
-      <div style={{ display: "flex", alignItems: "center", gap: 16, marginBottom: 28 }}>
-        <a href={`/dashboard?run_id=${runId}`} style={{ color: "#64748b", fontSize: 14, textDecoration: "none" }}>← Dashboard</a>
-        <h1 style={{ margin: 0, fontSize: 24, fontWeight: 800 }}>🏥 Doctor Appointment Search</h1>
-      </div>
-
-      <div style={{ background: "rgba(239,68,68,0.06)", border: "1px solid rgba(239,68,68,0.15)", borderRadius: 10, padding: "12px 16px", marginBottom: 24, fontSize: 13, color: "#f87171" }}>
-        ⚕️ For wellness care navigation only. Always verify provider credentials. In emergencies, call 911.
-      </div>
-
-      {!started ? (
-        <div className="card" style={{ maxWidth: 480 }}>
-          <div style={{ fontWeight: 700, fontSize: 16, marginBottom: 20 }}>Search for Providers</div>
-          <div style={{ marginBottom: 16 }}>
-            <label style={{ fontSize: 13, color: "#64748b", display: "block", marginBottom: 6 }}>Specialty / Concern</label>
-            <input
-              value={specialty}
-              onChange={(e) => setSpecialty(e.target.value)}
-              style={{ width: "100%", background: "var(--bg)", border: "1px solid var(--border)", borderRadius: 8, padding: "10px 14px", color: "#e2e8f0", fontSize: 14 }}
-            />
-          </div>
-          <div style={{ marginBottom: 20 }}>
-            <label style={{ fontSize: 13, color: "#64748b", display: "block", marginBottom: 6 }}>Location</label>
-            <input
-              value={location}
-              onChange={(e) => setLocation(e.target.value)}
-              style={{ width: "100%", background: "var(--bg)", border: "1px solid var(--border)", borderRadius: 8, padding: "10px 14px", color: "#e2e8f0", fontSize: 14 }}
-            />
-          </div>
-          <button className="btn-primary" onClick={startSearch} disabled={loading}>
-            {loading ? "Launching agents…" : "Launch Search Agents (×3)"}
+    <div className="min-h-screen bg-[#F4F1EA]">
+      <div className="px-6 py-8 max-w-5xl mx-auto">
+        {/* Header */}
+        <div className="flex items-center gap-4 mb-6">
+          <button
+            onClick={() => router.push(`/dashboard?run_id=${runId}`)}
+            className="text-[#1F3A2E] text-sm font-medium hover:opacity-70 transition-opacity"
+          >
+            ← Dashboard
           </button>
+          <h1 className="font-serif text-[#1F3A2E] text-2xl font-medium">
+            Doctor Appointment Search
+          </h1>
         </div>
-      ) : (
-        <>
-          <div style={{ marginBottom: 16, fontSize: 13, color: "#64748b" }}>
-            {sessions.filter((s) => s.done).length}/{sessions.length} agents complete · Searching for <strong>{specialty}</strong> in <strong>{location}</strong>
-          </div>
-          <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 16 }}>
-            {sessions.map((s) => (
-              <div key={s.agent} style={{ background: "var(--surface)", border: "1px solid var(--border)", borderRadius: 16, overflow: "hidden" }}>
-                <div style={{ padding: "12px 16px", display: "flex", alignItems: "center", gap: 8, borderBottom: "1px solid var(--border)" }}>
-                  <span style={{ width: 8, height: 8, borderRadius: "50%", background: statusColor(s), boxShadow: `0 0 6px ${statusColor(s)}`, display: "inline-block" }} />
-                  <span style={{ fontWeight: 600, fontSize: 14 }}>{s.agent}</span>
-                  <span style={{ marginLeft: "auto", fontSize: 12, color: "#64748b" }}>{s.done ? "complete" : s.status === "error" ? "failed" : "searching…"}</span>
-                </div>
-                {s.liveUrl ? (
-                  <iframe src={s.liveUrl} style={{ width: "100%", height: 340, border: "none" }} title={`${s.agent} browser session`} />
-                ) : (
-                  <div style={{ height: 340, display: "flex", alignItems: "center", justifyContent: "center", color: "#64748b", fontSize: 13 }}>
-                    {s.error ? `Error: ${s.error}` : "Waiting for live session…"}
-                  </div>
-                )}
+
+        {/* Disclaimer */}
+        <div className="bg-[#EFEAE0] border border-[#1F3A2E]/10 rounded-2xl px-5 py-3 mb-6 text-sm text-[#6B7280]">
+          For wellness care navigation only. Always verify provider credentials. In emergencies, call 911.
+        </div>
+
+        {!started ? (
+          <motion.div
+            initial={{ opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
+            className="bg-[#EFEAE0] rounded-2xl p-6 max-w-md"
+          >
+            <h2 className="font-serif text-[#1F3A2E] text-xl font-medium mb-6">
+              Search for Providers
+            </h2>
+
+            <div className="space-y-4 mb-6">
+              <div>
+                <label className="block text-sm text-[#6B7280] mb-2">Specialty / Concern</label>
+                <input
+                  value={specialty}
+                  onChange={(e) => setSpecialty(e.target.value)}
+                  className="w-full bg-[#F4F1EA] border border-[#1F3A2E]/20 rounded-xl px-4 py-3 text-[#3D3D3D] text-sm focus:outline-none focus:border-[#1F3A2E]/50"
+                />
               </div>
-            ))}
-          </div>
-        </>
-      )}
+              <div>
+                <label className="block text-sm text-[#6B7280] mb-2">Location</label>
+                <input
+                  value={location}
+                  onChange={(e) => setLocation(e.target.value)}
+                  className="w-full bg-[#F4F1EA] border border-[#1F3A2E]/20 rounded-xl px-4 py-3 text-[#3D3D3D] text-sm focus:outline-none focus:border-[#1F3A2E]/50"
+                />
+              </div>
+            </div>
+
+            <motion.button
+              onClick={startSearch}
+              disabled={loading}
+              whileHover={{ scale: 1.01 }}
+              whileTap={{ scale: 0.99 }}
+              className="w-full bg-[#1F3A2E] text-white py-3.5 rounded-full font-medium text-sm hover:bg-[#2A4D3D] transition-colors disabled:opacity-40"
+            >
+              {loading ? "Launching agents…" : "Launch Search Agents (×3)"}
+            </motion.button>
+          </motion.div>
+        ) : (
+          <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }}>
+            <p className="text-[#6B7280] text-sm mb-4">
+              {sessions.filter((s) => s.done).length}/{sessions.length} agents complete
+              · Searching for <strong className="text-[#3D3D3D]">{specialty}</strong> in{" "}
+              <strong className="text-[#3D3D3D]">{location}</strong>
+            </p>
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+              {sessions.map((s) => (
+                <div
+                  key={s.agent}
+                  className="bg-[#EFEAE0] rounded-2xl overflow-hidden border border-[#1F3A2E]/10"
+                >
+                  <div className="px-4 py-3 flex items-center gap-2.5 border-b border-[#1F3A2E]/10">
+                    <span
+                      className="w-2 h-2 rounded-full flex-shrink-0"
+                      style={{ backgroundColor: statusDot(s), boxShadow: `0 0 6px ${statusDot(s)}` }}
+                    />
+                    <span className="font-medium text-[#1F3A2E] text-sm">{s.agent}</span>
+                    <span className="ml-auto text-xs text-[#6B7280]">{statusLabel(s)}</span>
+                  </div>
+                  {s.liveUrl ? (
+                    <iframe
+                      src={s.liveUrl}
+                      className="w-full border-none"
+                      style={{ height: 340 }}
+                      title={`${s.agent} browser session`}
+                    />
+                  ) : (
+                    <div className="h-[340px] flex items-center justify-center text-[#6B7280] text-sm">
+                      {s.error ? `Error: ${s.error}` : "Waiting for live session…"}
+                    </div>
+                  )}
+                </div>
+              ))}
+            </div>
+          </motion.div>
+        )}
+      </div>
     </div>
   );
 }

@@ -153,6 +153,27 @@ CONVERSATION STYLE:
       console.info(`[CareFlow] Participant joined: ${participant.identity}`);
     }
 
+    // Parse language from room name: intake-{en|es|zh}-{timestamp}
+    const langMatch = roomName.match(/^intake-(en|es|zh)-/);
+    const sessionLang = langMatch?.[1] ?? "en";
+    const deepgramLang = sessionLang === "zh" ? "zh-CN" : sessionLang;
+
+    const LANG_INSTRUCTIONS: Record<string, string> = {
+      en: "Always respond in English.",
+      es: "IMPORTANTE: Responde siempre en español. Toda tu comunicación debe ser en español.",
+      zh: "重要提示：请始终用中文（普通话）回复。所有交流都必须用中文进行。",
+    };
+    const LANG_GREETINGS: Record<string, string> = {
+      en: "Greet the user warmly. Introduce yourself as CareFlow, a wellness care-navigation companion. Briefly mention you are not a doctor and this is not medical advice — for emergencies they should call 911. Then ask them what health or wellness concern they'd like to discuss today. Keep it warm and brief.",
+      es: "Saluda calurosamente al usuario en español. Preséntate como CareFlow, un asistente de navegación de salud. Menciona brevemente que no eres médico y esto no es consejo médico — para emergencias deben llamar al 911. Luego pregunta qué problema de salud o bienestar les gustaría discutir hoy. Sé cálido y breve.",
+      zh: "用中文热情地问候用户。介绍自己是CareFlow，一个健康护理导航助手。简要说明你不是医生，这不是医疗建议——紧急情况请拨打911。然后询问用户今天想讨论什么健康问题。保持温暖简短。",
+    };
+
+    if (!isAltMed) {
+      instructions = `${instructions}\n\nLANGUAGE: ${LANG_INSTRUCTIONS[sessionLang] ?? LANG_INSTRUCTIONS.en}`;
+      greetingInstructions = LANG_GREETINGS[sessionLang] ?? LANG_GREETINGS.en;
+    }
+
     const agent = new voice.Agent({
       instructions,
       tools,
@@ -160,7 +181,7 @@ CONVERSATION STYLE:
 
     const session = new voice.AgentSession({
       vad: ctx.proc.userData.vad as silero.VAD,
-      stt: new deepgram.STTv2({ apiKey: process.env.DEEPGRAM_API_KEY, model: "flux-general-en", eagerEotThreshold: 0.4 }),
+      stt: new deepgram.STTv2({ apiKey: process.env.DEEPGRAM_API_KEY, model: "nova-2", language: deepgramLang, eagerEotThreshold: 0.4 }),
       llm: new openai.LLM({ model: "gpt-4.1-mini" }),
       tts: new elevenlabs.TTS({ apiKey: process.env.ELEVENLABS_API_KEY, modelID: "eleven_turbo_v2_5", voiceId: "Xb7hH8MSUJpSbSDYk0k2" }),
       turnDetection: "stt",

@@ -1,17 +1,19 @@
 @import "tailwindcss";
 
 :root {
-  --bg: #080c14;
-  --surface: #0f1623;
-  --border: rgba(255,255,255,0.07);
-  --accent: #22d3ee;
-  --accent-dim: rgba(34,211,238,0.15);
-  --text: #e2e8f0;
-  --muted: #64748b;
-  --emergency: #ef4444;
-  --urgent: #f59e0b;
-  --routine: #22d3ee;
-  --wellness: #34d399;
+  --bg: #F4F1EA;
+  --surface: #EFEAE0;
+  --border: rgba(31, 58, 46, 0.12);
+  --primary: #1F3A2E;
+  --primary-hover: #2A4D3D;
+  --accent: #1F3A2E;
+  --accent-dim: rgba(31, 58, 46, 0.08);
+  --text: #3D3D3D;
+  --muted: #6B7280;
+  --emergency: #DC2626;
+  --urgent: #EA580C;
+  --routine: #D97706;
+  --wellness: #16A34A;
 }
 
 * { box-sizing: border-box; }
@@ -19,8 +21,12 @@
 body {
   background: var(--bg);
   color: var(--text);
-  font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Inter", sans-serif;
+  font-family: 'DM Sans', -apple-system, BlinkMacSystemFont, "SF Pro Text", "Inter", sans-serif;
   margin: 0;
+}
+
+.font-serif {
+  font-family: 'Crimson Pro', Georgia, serif;
 }
 
 .card {
@@ -31,18 +37,31 @@ body {
 }
 
 .btn-primary {
-  background: var(--accent);
-  color: #000;
+  background: var(--primary);
+  color: #fff;
   border: none;
   border-radius: 9999px;
   padding: 12px 28px;
-  font-weight: 600;
+  font-weight: 500;
   font-size: 14px;
   cursor: pointer;
-  transition: opacity 0.15s;
+  transition: background 0.15s;
 }
-.btn-primary:hover { opacity: 0.85; }
+.btn-primary:hover { background: var(--primary-hover); }
 .btn-primary:disabled { opacity: 0.4; cursor: not-allowed; }
+
+.btn-outline {
+  background: transparent;
+  color: var(--primary);
+  border: 2px solid var(--primary);
+  border-radius: 9999px;
+  padding: 12px 28px;
+  font-weight: 500;
+  font-size: 14px;
+  cursor: pointer;
+  transition: background 0.15s;
+}
+.btn-outline:hover { background: rgba(31, 58, 46, 0.05); }
 
 .urgency-emergency { color: var(--emergency); }
 .urgency-urgent { color: var(--urgent); }
@@ -50,15 +69,17 @@ body {
 .urgency-wellness { color: var(--wellness); }
 
 .pill {
-  display: inline-block;
-  padding: 4px 12px;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 14px;
   border-radius: 9999px;
   font-size: 12px;
-  font-weight: 600;
+  font-weight: 700;
   text-transform: uppercase;
   letter-spacing: 0.05em;
 }
-.pill-emergency { background: rgba(239,68,68,0.15); color: var(--emergency); }
-.pill-urgent { background: rgba(245,158,11,0.15); color: var(--urgent); }
-.pill-routine { background: rgba(34,211,238,0.15); color: var(--routine); }
-.pill-wellness { background: rgba(52,211,153,0.15); color: var(--wellness); }
+.pill-emergency { background: #FEE2E2; color: var(--emergency); }
+.pill-urgent    { background: #FFEDD5; color: var(--urgent); }
+.pill-routine   { background: #FEF3C7; color: var(--routine); }
+.pill-wellness  { background: #DCFCE7; color: var(--wellness); }

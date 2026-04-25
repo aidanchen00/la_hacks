@@ -106,7 +106,7 @@ Return ONLY valid JSON:
   "payment_amount_usd": 0.0,
   "requires_doctor_approval": false,
   "rationale": "...",
-  "disclaimers": ["CareFlow is a wellness education tool..."]
+  "disclaimers": ["Prana is a wellness education tool..."]
 }"""
 
 
@@ -139,7 +139,7 @@ async def route_text(text: str) -> Dict[str, Any]:
             "payment_amount_usd": 0.0,
             "requires_doctor_approval": False,
             "rationale": f"LLM error fallback: {str(e)[:60]}",
-            "disclaimers": ["CareFlow is a wellness education tool, not a medical diagnosis service."],
+            "disclaimers": ["{Prana} is a wellness education tool, not a medical diagnosis service."],
         }
 
 

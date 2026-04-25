@@ -179,7 +179,7 @@ def seed():
                VALUES (?, ?, ?, ?, ?, 0, 0, 0, ?, ?)""",
             (run_id, urgency, path, summary, json.dumps(next_actions),
              f"Routed based on reported symptoms and urgency assessment.",
-             json.dumps(["CareFlow is a wellness education tool, not a substitute for licensed medical care."])),
+             json.dumps(["Prana is a wellness education tool, not a substitute for licensed medical care."])),
         )
     print(f"Inserted {len(RUNS)} runs with routing decisions")
 

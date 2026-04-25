@@ -3,6 +3,7 @@
 import { useEffect, useState, useRef } from "react";
 import { useParams } from "next/navigation";
 import { getRun } from "@/lib/api";
+import { motion } from "motion/react";
 
 interface SessionInfo {
   agent: string;
@@ -70,68 +71,112 @@ export default function PharmacyPage() {
     return () => { if (pollRef.current) clearInterval(pollRef.current); };
   }, [started, sessions]);
 
-  const statusColor = (s: SessionInfo) =>
-    s.done ? "#34d399" : s.status === "error" ? "#f87171" : "#a78bfa";
+  const statusDot = (s: SessionInfo) =>
+    s.done ? "#16A34A" : s.status === "error" ? "#DC2626" : "#D97706";
+
+  const statusLabel = (s: SessionInfo) =>
+    s.done ? "Complete" : s.status === "error" ? "Failed" : "Searching…";
 
   return (
-    <div style={{ minHeight: "100vh", padding: "32px 24px", maxWidth: 1100, margin: "0 auto" }}>
-      <div style={{ display: "flex", alignItems: "center", gap: 16, marginBottom: 28 }}>
-        <a href={`/dashboard?run_id=${runId}`} style={{ color: "#64748b", fontSize: 14, textDecoration: "none" }}>← Dashboard</a>
-        <h1 style={{ margin: 0, fontSize: 24, fontWeight: 800 }}>💊 Pharmacy & Wellness Products</h1>
-      </div>
-
-      {/* Disclaimers */}
-      <div style={{ background: "rgba(167,139,250,0.06)", border: "1px solid rgba(167,139,250,0.2)", borderRadius: 10, padding: "12px 16px", marginBottom: 16, fontSize: 13, color: "#a78bfa" }}>
-        ⚕️ For educational purposes only. Consult a licensed pharmacist or doctor before purchasing any medication. This tool does not process or confirm purchases.
-      </div>
-
-      {requiresDoctorApproval && (
-        <div style={{ background: "rgba(239,68,68,0.08)", border: "1px solid rgba(239,68,68,0.25)", borderRadius: 10, padding: "14px 18px", marginBottom: 20, fontSize: 14, color: "#f87171" }}>
-          🔒 <strong>Doctor Approval Required</strong> — Your intake indicates prescription-only items may be needed. Please consult a licensed physician before purchasing medications. Ordering is disabled for your safety.
+    <div className="min-h-screen bg-[#F4F1EA]">
+      <div className="px-6 py-8 max-w-5xl mx-auto">
+        {/* Header */}
+        <div className="flex items-center gap-4 mb-6">
+          <a
+            href={`/dashboard?run_id=${runId}`}
+            className="text-[#1F3A2E] text-sm font-medium hover:opacity-70 transition-opacity"
+          >
+            ← Dashboard
+          </a>
+          <h1 className="font-serif text-[#1F3A2E] text-2xl font-medium">
+            Pharmacy & Wellness Products
+          </h1>
         </div>
-      )}
 
-      {!started ? (
-        <div className="card" style={{ maxWidth: 480 }}>
-          <div style={{ fontWeight: 700, fontSize: 16, marginBottom: 20 }}>Search Wellness Products</div>
-          <div style={{ marginBottom: 20 }}>
-            <label style={{ fontSize: 13, color: "#64748b", display: "block", marginBottom: 6 }}>What are you looking for?</label>
-            <input
-              value={query}
-              onChange={(e) => setQuery(e.target.value)}
-              disabled={requiresDoctorApproval}
-              style={{ width: "100%", background: "var(--bg)", border: "1px solid var(--border)", borderRadius: 8, padding: "10px 14px", color: "#e2e8f0", fontSize: 14, opacity: requiresDoctorApproval ? 0.5 : 1 }}
-            />
-          </div>
-          <button className="btn-primary" onClick={startSearch} disabled={loading || requiresDoctorApproval}>
-            {requiresDoctorApproval ? "Requires Doctor Approval" : loading ? "Launching agents…" : "Search CVS · Walgreens · GoodRx"}
-          </button>
+        {/* Disclaimer */}
+        <div className="bg-[#EFEAE0] border border-[#1F3A2E]/10 rounded-2xl px-5 py-3 mb-4 text-sm text-[#6B7280]">
+          For educational purposes only. Consult a licensed pharmacist or doctor before purchasing any medication.
         </div>
-      ) : (
-        <>
-          <div style={{ marginBottom: 16, fontSize: 13, color: "#64748b" }}>
-            Searching for <strong>{query}</strong> across pharmacies
+
+        {/* Doctor approval warning */}
+        {requiresDoctorApproval && (
+          <div className="bg-[#FEE2E2] border border-[#DC2626]/20 rounded-2xl px-5 py-4 mb-6 text-sm text-[#DC2626]">
+            <strong>Doctor Approval Required</strong> — Your intake indicates prescription-only items may be needed.
+            Please consult a licensed physician before purchasing medications. Ordering is disabled for your safety.
           </div>
-          <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 16 }}>
-            {sessions.map((s) => (
-              <div key={s.agent} style={{ background: "var(--surface)", border: "1px solid var(--border)", borderRadius: 16, overflow: "hidden" }}>
-                <div style={{ padding: "12px 16px", display: "flex", alignItems: "center", gap: 8, borderBottom: "1px solid var(--border)" }}>
-                  <span style={{ width: 8, height: 8, borderRadius: "50%", background: statusColor(s), display: "inline-block" }} />
-                  <span style={{ fontWeight: 600, fontSize: 14 }}>{s.agent}</span>
-                  <span style={{ marginLeft: "auto", fontSize: 12, color: "#64748b" }}>{s.done ? "complete" : "searching…"}</span>
-                </div>
-                {s.liveUrl ? (
-                  <iframe src={s.liveUrl} style={{ width: "100%", height: 340, border: "none" }} title={`${s.agent} browser`} />
-                ) : (
-                  <div style={{ height: 340, display: "flex", alignItems: "center", justifyContent: "center", color: "#64748b", fontSize: 13 }}>
-                    {s.error ? `Error: ${s.error}` : "Waiting for live session…"}
+        )}
+
+        {!started ? (
+          <motion.div
+            initial={{ opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
+            className="bg-[#EFEAE0] rounded-2xl p-6 max-w-md"
+          >
+            <h2 className="font-serif text-[#1F3A2E] text-xl font-medium mb-6">
+              Search Wellness Products
+            </h2>
+
+            <div className="mb-6">
+              <label className="block text-sm text-[#6B7280] mb-2">What are you looking for?</label>
+              <input
+                value={query}
+                onChange={(e) => setQuery(e.target.value)}
+                disabled={requiresDoctorApproval}
+                className="w-full bg-[#F4F1EA] border border-[#1F3A2E]/20 rounded-xl px-4 py-3 text-[#3D3D3D] text-sm focus:outline-none focus:border-[#1F3A2E]/50 disabled:opacity-50"
+              />
+            </div>
+
+            <motion.button
+              onClick={startSearch}
+              disabled={loading || requiresDoctorApproval}
+              whileHover={{ scale: 1.01 }}
+              whileTap={{ scale: 0.99 }}
+              className="w-full bg-[#1F3A2E] text-white py-3.5 rounded-full font-medium text-sm hover:bg-[#2A4D3D] transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+            >
+              {requiresDoctorApproval
+                ? "Requires Doctor Approval"
+                : loading
+                  ? "Launching agents…"
+                  : "Search CVS · Walgreens · GoodRx"}
+            </motion.button>
+          </motion.div>
+        ) : (
+          <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }}>
+            <p className="text-[#6B7280] text-sm mb-4">
+              Searching for <strong className="text-[#3D3D3D]">{query}</strong> across pharmacies
+            </p>
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+              {sessions.map((s) => (
+                <div
+                  key={s.agent}
+                  className="bg-[#EFEAE0] rounded-2xl overflow-hidden border border-[#1F3A2E]/10"
+                >
+                  <div className="px-4 py-3 flex items-center gap-2.5 border-b border-[#1F3A2E]/10">
+                    <span
+                      className="w-2 h-2 rounded-full flex-shrink-0"
+                      style={{ backgroundColor: statusDot(s) }}
+                    />
+                    <span className="font-medium text-[#1F3A2E] text-sm">{s.agent}</span>
+                    <span className="ml-auto text-xs text-[#6B7280]">{statusLabel(s)}</span>
                   </div>
-                )}
-              </div>
-            ))}
-          </div>
-        </>
-      )}
+                  {s.liveUrl ? (
+                    <iframe
+                      src={s.liveUrl}
+                      className="w-full border-none"
+                      style={{ height: 340 }}
+                      title={`${s.agent} browser`}
+                    />
+                  ) : (
+                    <div className="h-[340px] flex items-center justify-center text-[#6B7280] text-sm">
+                      {s.error ? `Error: ${s.error}` : "Waiting for live session…"}
+                    </div>
+                  )}
+                </div>
+              ))}
+            </div>
+          </motion.div>
+        )}
+      </div>
     </div>
   );
 }

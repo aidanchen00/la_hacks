@@ -84,7 +84,7 @@ async def route_intake(transcript: str, summary: str) -> Dict[str, Any]:
             "requires_doctor_approval": False,
             "rationale": f"Fallback routing (LLM error: {str(e)[:60]})",
             "disclaimers": [
-                "CareFlow is a wellness education tool, not a medical diagnosis service.",
+                "Prana is a wellness education tool, not a medical diagnosis service.",
                 "Always consult a licensed healthcare professional for medical advice.",
             ],
         }

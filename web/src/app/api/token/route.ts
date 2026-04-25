@@ -13,10 +13,12 @@ export async function POST(req: Request) {
       throw new Error("LIVEKIT_URL, LIVEKIT_API_KEY, and LIVEKIT_API_SECRET must be set");
     }
 
-    const body = await req.json();
+    const url = new URL(req.url);
+    const lang = url.searchParams.get("lang") || "en";
+    const body = await req.json().catch(() => ({}));
     const participantIdentity = body.participant_identity || `user_${Math.floor(Math.random() * 10_000)}`;
     const participantName = body.participant_name || "User";
-    const roomName = body.room_name || `intake_${Math.floor(Math.random() * 10_000)}`;
+    const roomName = body.room_name || `intake-${lang}-${Date.now()}`;
 
     const at = new AccessToken(API_KEY, API_SECRET, {
       identity: participantIdentity,
