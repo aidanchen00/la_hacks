@@ -4,6 +4,7 @@ import { useEffect, useRef, useState, useCallback } from "react";
 import { useParams } from "next/navigation";
 import { useOdyssey } from "@odysseyml/odyssey/react";
 import { credentialsFromDict } from "@odysseyml/odyssey";
+import { motion } from "motion/react";
 
 export default function MemoryWorldPage() {
   const { runId } = useParams<{ runId: string }>();
@@ -65,9 +66,7 @@ export default function MemoryWorldPage() {
   };
 
   const stopStream = async () => {
-    try {
-      await odyssey.endStream();
-    } catch { /* ignore */ }
+    try { await odyssey.endStream(); } catch { /* ignore */ }
     odyssey.disconnect();
     setStreaming(false);
     if (videoRef.current) videoRef.current.srcObject = null;
@@ -80,7 +79,6 @@ export default function MemoryWorldPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // Once credentials are ready, connect + start
   useEffect(() => {
     if (credentials && !odyssey.isConnected && !streaming) {
       startStream();
@@ -115,87 +113,124 @@ export default function MemoryWorldPage() {
   };
 
   const statusColor = () => {
-    if (streaming) return "#34d399";
-    if (odyssey.status === "failed") return "#f87171";
-    return "#64748b";
+    if (streaming) return "#16A34A";
+    if (odyssey.status === "failed") return "#DC2626";
+    return "#6B7280";
   };
 
   return (
-    <div style={{ minHeight: "100vh", padding: "32px 24px", maxWidth: 900, margin: "0 auto" }}>
-      <div style={{ display: "flex", alignItems: "center", gap: 16, marginBottom: 28 }}>
-        <a href={`/dashboard?run_id=${runId}`} style={{ color: "#64748b", fontSize: 14, textDecoration: "none" }}>← Dashboard</a>
-        <h1 style={{ margin: 0, fontSize: 24, fontWeight: 800 }}>🌊 Memory World</h1>
-        <span style={{ marginLeft: "auto", fontSize: 13, color: statusColor(), fontWeight: 600 }}>
-          {statusLabel()}
-        </span>
-      </div>
+    <div className="min-h-screen bg-[#F4F1EA]">
+      <div className="px-4 sm:px-6 py-6 sm:py-8 max-w-4xl mx-auto">
+        {/* Header */}
+        <div className="flex flex-wrap items-center gap-3 mb-6">
+          <a
+            href={`/dashboard?run_id=${runId}`}
+            className="text-[#1F3A2E] text-sm font-medium hover:opacity-70 transition-opacity min-h-[44px] flex items-center"
+          >
+            ← Dashboard
+          </a>
+          <h1 className="font-serif text-[#1F3A2E] text-xl sm:text-2xl font-medium">Memory World</h1>
+          <span
+            className="ml-auto text-xs font-semibold uppercase tracking-wider"
+            style={{ color: statusColor() }}
+          >
+            {statusLabel()}
+          </span>
+        </div>
 
-      <p style={{ color: "#64748b", marginBottom: 28, lineHeight: 1.6, maxWidth: 600 }}>
-        Describe a calming memory or place and CareFlow will generate a live immersive video stream to help you relax and restore.
-      </p>
+        <p className="text-[#6B7280] text-sm mb-6 max-w-xl leading-relaxed">
+          Describe a calming memory or place and Prana will generate a live immersive video stream
+          to help you relax and restore.
+        </p>
 
-      {/* Live video */}
-      <div style={{ position: "relative", borderRadius: 16, overflow: "hidden", border: "1px solid var(--border)", background: "#0f172a", marginBottom: 24, aspectRatio: "16/9" }}>
-        <video
-          ref={videoRef}
-          autoPlay
-          playsInline
-          muted={false}
-          style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }}
-        />
-        {!streaming && (
-          <div style={{ position: "absolute", inset: 0, display: "flex", alignItems: "center", justifyContent: "center", color: "#475569", fontSize: 14 }}>
-            {loading || odyssey.status === "connecting" || odyssey.status === "authenticating"
-              ? "Connecting to live stream…"
-              : "Stream not started"}
+        {/* Live video */}
+        <motion.div
+          initial={{ opacity: 0, y: 10 }}
+          animate={{ opacity: 1, y: 0 }}
+          className="relative rounded-2xl overflow-hidden border border-[#1F3A2E]/15 bg-[#1F3A2E] mb-6"
+          style={{ aspectRatio: "16/9" }}
+        >
+          <video
+            ref={videoRef}
+            autoPlay
+            playsInline
+            muted={false}
+            className="w-full h-full object-cover block"
+          />
+          {!streaming && (
+            <div className="absolute inset-0 flex items-center justify-center text-[#EFEAE0]/60 text-sm">
+              {loading || odyssey.status === "connecting" || odyssey.status === "authenticating"
+                ? "Connecting to live stream…"
+                : "Stream not started"}
+            </div>
+          )}
+        </motion.div>
+
+        {error && (
+          <div className="bg-[#FEE2E2] border border-[#DC2626]/20 rounded-2xl px-4 py-3 mb-4 text-sm text-[#DC2626]">
+            {error}
           </div>
         )}
-      </div>
 
-      {error && (
-        <div style={{ color: "#f87171", fontSize: 13, marginBottom: 16, background: "rgba(248,113,113,0.08)", borderRadius: 8, padding: "10px 14px" }}>
-          {error}
-        </div>
-      )}
+        <div className="bg-[#EFEAE0] rounded-2xl p-6 max-w-xl">
+          <div className="mb-4">
+            <label className="block text-sm text-[#6B7280] mb-2">Describe your calming memory or place</label>
+            <textarea
+              value={prompt}
+              onChange={(e) => setPrompt(e.target.value)}
+              rows={3}
+              disabled={streaming}
+              className="w-full bg-[#F4F1EA] border border-[#1F3A2E]/20 rounded-xl px-4 py-3 text-[#3D3D3D] focus:outline-none focus:border-[#1F3A2E]/50 resize-y disabled:opacity-50"
+              style={{ fontSize: 16 }}
+            />
+          </div>
 
-      <div className="card" style={{ maxWidth: 600 }}>
-        <div style={{ marginBottom: 16 }}>
-          <label style={{ fontSize: 13, color: "#64748b", display: "block", marginBottom: 6 }}>Describe your calming memory or place</label>
-          <textarea
-            value={prompt}
-            onChange={(e) => setPrompt(e.target.value)}
-            rows={3}
-            disabled={streaming}
-            style={{ width: "100%", background: "var(--bg)", border: "1px solid var(--border)", borderRadius: 8, padding: "10px 14px", color: "#e2e8f0", fontSize: 14, resize: "vertical", opacity: streaming ? 0.5 : 1 }}
-          />
-        </div>
+          <div className="mb-5">
+            <label className="block text-sm text-[#6B7280] mb-2">Optional: seed image (JPEG/PNG)</label>
+            <div
+              onClick={() => !streaming && fileRef.current?.click()}
+              className={`border-2 border-dashed border-[#1F3A2E]/20 rounded-xl p-4 text-center transition-colors ${
+                streaming ? "opacity-50 cursor-default" : "cursor-pointer hover:border-[#1F3A2E]/40"
+              }`}
+            >
+              {imagePreview ? (
+                // eslint-disable-next-line @next/next/no-img-element
+                <img src={imagePreview} alt="preview" className="max-h-32 rounded-lg object-contain mx-auto" />
+              ) : (
+                <div className="text-[#6B7280] text-sm">Click to upload image → used as visual seed</div>
+              )}
+            </div>
+            <input
+              ref={fileRef}
+              type="file"
+              accept="image/jpeg,image/png"
+              className="hidden"
+              onChange={handleFileChange}
+            />
+          </div>
 
-        <div style={{ marginBottom: 20 }}>
-          <label style={{ fontSize: 13, color: "#64748b", display: "block", marginBottom: 6 }}>Optional: seed image (JPEG/PNG)</label>
-          <div
-            onClick={() => !streaming && fileRef.current?.click()}
-            style={{ border: "2px dashed var(--border)", borderRadius: 12, padding: 16, textAlign: "center", cursor: streaming ? "default" : "pointer", opacity: streaming ? 0.5 : 1 }}
-          >
-            {imagePreview ? (
-              // eslint-disable-next-line @next/next/no-img-element
-              <img src={imagePreview} alt="preview" style={{ maxHeight: 120, borderRadius: 8, objectFit: "contain" }} />
+          <div className="flex gap-3">
+            {streaming ? (
+              <motion.button
+                whileHover={{ scale: 1.01 }}
+                whileTap={{ scale: 0.99 }}
+                onClick={stopStream}
+                className="flex-1 bg-[#DC2626] text-white rounded-full font-medium text-sm hover:bg-[#B91C1C] transition-colors min-h-[48px]"
+              >
+                Stop Stream
+              </motion.button>
             ) : (
-              <div style={{ color: "#475569", fontSize: 13 }}>Click to upload image → used as visual seed</div>
+              <motion.button
+                whileHover={{ scale: 1.01 }}
+                whileTap={{ scale: 0.99 }}
+                onClick={relaunch}
+                disabled={loading}
+                className="flex-1 bg-[#1F3A2E] text-white rounded-full font-medium text-sm hover:bg-[#2A4D3D] transition-colors disabled:opacity-40 min-h-[48px]"
+              >
+                {loading ? "Starting…" : "Start Livestream"}
+              </motion.button>
             )}
           </div>
-          <input ref={fileRef} type="file" accept="image/jpeg,image/png" style={{ display: "none" }} onChange={handleFileChange} />
-        </div>
-
-        <div style={{ display: "flex", gap: 12 }}>
-          {streaming ? (
-            <button className="btn-primary" onClick={stopStream} style={{ background: "#ef4444" }}>
-              Stop Stream
-            </button>
-          ) : (
-            <button className="btn-primary" onClick={relaunch} disabled={loading}>
-              {loading ? "Starting…" : "Start Livestream"}
-            </button>
-          )}
         </div>
       </div>
     </div>

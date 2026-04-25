@@ -29,7 +29,7 @@ export async function POST(req: NextRequest) {
   const dashboardLine = run_id ? `Dashboard: http://localhost:3000/dashboard?run_id=${run_id}` : "";
 
   const body = [
-    "🩺 CareFlow Intake Complete",
+    "🩺 Prana Intake Complete",
     urgencyLine,
     pathLine,
     "",

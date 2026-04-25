@@ -1,18 +1,16 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useParams } from "next/navigation";
-import type mapboxgl from "mapbox-gl";
 import {
-  SessionProvider,
-  useSession,
+  LiveKitRoom,
   useAgent,
   BarVisualizer,
   RoomAudioRenderer,
   TrackToggle,
   DisconnectButton,
 } from "@livekit/components-react";
-import { Track, TokenSource } from "livekit-client";
+import { Track } from "livekit-client";
 import "@livekit/components-styles";
 
 const TRADITIONS = {
@@ -72,7 +70,7 @@ type TraditionKey = keyof typeof TRADITIONS;
 type TraditionData = typeof TRADITIONS[TraditionKey];
 
 // ---------------------------------------------------------------------------
-// Mini LiveKit call window
+// LiveKit call content
 // ---------------------------------------------------------------------------
 
 function CallContent({ tradition, onClose }: { tradition: TraditionData; onClose: () => void }) {
@@ -101,14 +99,15 @@ function CallContent({ tradition, onClose }: { tradition: TraditionData; onClose
       <div style={{ display: "flex", gap: 8 }} data-lk-theme="default">
         <TrackToggle
           source={Track.Source.Microphone}
-          style={{ padding: "8px 16px", borderRadius: 9999, background: "rgba(255,255,255,0.06)", color: "#cbd5e1", fontSize: 12, cursor: "pointer", border: "none" }}
+          style={{ padding: "10px 16px", borderRadius: 9999, background: "rgba(255,255,255,0.06)", color: "#cbd5e1", fontSize: 13, cursor: "pointer", border: "none", minHeight: 44 }}
         />
         <DisconnectButton
-          style={{ padding: "8px 16px", borderRadius: 9999, background: "rgba(239,68,68,0.15)", color: "#f87171", fontSize: 12, cursor: "pointer", border: "none" }}
+          style={{ padding: "10px 16px", borderRadius: 9999, background: "rgba(239,68,68,0.15)", color: "#f87171", fontSize: 13, cursor: "pointer", border: "none", minHeight: 44 }}
         >
           End Call
         </DisconnectButton>
       </div>
+      <RoomAudioRenderer />
     </div>
   );
 }
@@ -117,55 +116,59 @@ function AltMedicineCallWindow({
   traditionKey,
   tradition,
   onClose,
+  isMobile,
 }: {
   traditionKey: TraditionKey;
   tradition: TraditionData;
   onClose: () => void;
+  isMobile: boolean;
 }) {
-  const roomName = useMemo(() => `altmed-${traditionKey}-${Date.now()}`, [traditionKey]);
+  const [conn, setConn] = useState<{ serverUrl: string; token: string } | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const roomNameRef = useRef(`altmed-${traditionKey}-${Date.now()}`);
 
-  const tokenSource = useMemo(() => TokenSource.custom(async () => {
-    const resp = await fetch("/api/token", {
+  useEffect(() => {
+    fetch("/api/token", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ room_name: roomName, participant_name: "user" }),
-    });
-    if (!resp.ok) throw new Error("Token fetch failed");
-    const data = await resp.json();
-    return { serverUrl: data.serverUrl, participantToken: data.participantToken };
-  }), [roomName]);
-
-  const session = useSession(tokenSource);
-  const sessionRef = useRef(session);
-  const [error, setError] = useState<string | null>(null);
-
-  // Capture session at mount time and start once — do NOT depend on `session`
-  // because useSession returns a new object on every connection-state change,
-  // which would cause start→state-change→re-render→end→start infinitely.
-  useEffect(() => {
-    const s = sessionRef.current;
-    s.start().catch((e: unknown) => setError(e instanceof Error ? e.message : "Failed to connect"));
-    return () => { s.end().catch(() => {}); };
-  // eslint-disable-next-line react-hooks/exhaustive-deps
+      body: JSON.stringify({ room_name: roomNameRef.current, participant_name: "user" }),
+    })
+      .then((r) => r.json())
+      .then((data) => setConn({ serverUrl: data.serverUrl, token: data.participantToken }))
+      .catch(() => setError("Failed to connect to agent"));
   }, []);
 
-  const handleClose = () => {
-    session.end().catch(() => {});
-    onClose();
+  const mobileStyle: React.CSSProperties = {
+    position: "fixed",
+    bottom: 0,
+    left: 0,
+    right: 0,
+    zIndex: 1000,
+    background: "#0f1623",
+    border: `1px solid ${tradition.color}50`,
+    borderRadius: "16px 16px 0 0",
+    boxShadow: `0 -4px 32px ${tradition.color}18, 0 -4px 12px rgba(0,0,0,0.6)`,
+    overflow: "hidden",
+  };
+
+  const desktopStyle: React.CSSProperties = {
+    position: "fixed",
+    bottom: 24,
+    right: 24,
+    width: 300,
+    zIndex: 1000,
+    background: "#0f1623",
+    border: `1px solid ${tradition.color}50`,
+    borderRadius: 16,
+    boxShadow: `0 8px 32px ${tradition.color}18, 0 4px 12px rgba(0,0,0,0.6)`,
+    overflow: "hidden",
   };
 
   return (
-    <div style={{
-      position: "fixed", bottom: 24, right: 24, width: 300, zIndex: 1000,
-      background: "#0f1623",
-      border: `1px solid ${tradition.color}50`,
-      borderRadius: 16,
-      boxShadow: `0 8px 32px ${tradition.color}18, 0 4px 12px rgba(0,0,0,0.6)`,
-      overflow: "hidden",
-    }}>
+    <div style={isMobile ? mobileStyle : desktopStyle}>
       {/* Header */}
       <div style={{
-        padding: "12px 16px",
+        padding: "14px 16px",
         display: "flex", alignItems: "center", gap: 10,
         borderBottom: `1px solid ${tradition.color}20`,
         background: `linear-gradient(135deg, ${tradition.color}10, transparent)`,
@@ -178,8 +181,8 @@ function AltMedicineCallWindow({
           <div style={{ fontSize: 11, color: tradition.color, marginTop: 1 }}>Wellness Educator</div>
         </div>
         <button
-          onClick={handleClose}
-          style={{ background: "none", border: "none", color: "#64748b", cursor: "pointer", fontSize: 20, lineHeight: 1, padding: 2, flexShrink: 0 }}
+          onClick={onClose}
+          style={{ background: "none", border: "none", color: "#64748b", cursor: "pointer", fontSize: 24, lineHeight: 1, padding: "4px 8px", flexShrink: 0, minHeight: 44, minWidth: 44, display: "flex", alignItems: "center", justifyContent: "center" }}
         >
           ×
         </button>
@@ -188,13 +191,107 @@ function AltMedicineCallWindow({
       {/* Body */}
       {error ? (
         <div style={{ padding: 20, color: "#f87171", fontSize: 12, textAlign: "center" }}>{error}</div>
+      ) : !conn ? (
+        <div style={{ padding: 28, textAlign: "center", color: "#64748b", fontSize: 12 }}>
+          Connecting to agent…
+        </div>
       ) : (
-        <SessionProvider session={session}>
-          <CallContent tradition={tradition} onClose={handleClose} />
-          <RoomAudioRenderer />
-        </SessionProvider>
+        <LiveKitRoom
+          serverUrl={conn.serverUrl}
+          token={conn.token}
+          connect={true}
+          audio={true}
+          video={false}
+          onDisconnected={onClose}
+        >
+          <CallContent tradition={tradition} onClose={onClose} />
+        </LiveKitRoom>
       )}
     </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Bottom sheet (mobile) for selected tradition
+// ---------------------------------------------------------------------------
+
+function TraditionBottomSheet({
+  selected,
+  tradition,
+  onClose,
+  onTalkToAgent,
+}: {
+  selected: TraditionKey;
+  tradition: TraditionData;
+  onClose: () => void;
+  onTalkToAgent: () => void;
+}) {
+  return (
+    <>
+      {/* Backdrop */}
+      <div
+        onClick={onClose}
+        style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.4)", zIndex: 40 }}
+      />
+      {/* Sheet */}
+      <div style={{
+        position: "fixed",
+        bottom: 0,
+        left: 0,
+        right: 0,
+        zIndex: 50,
+        background: "#0f1623",
+        borderRadius: "16px 16px 0 0",
+        maxHeight: "70vh",
+        overflowY: "auto",
+        paddingBottom: "env(safe-area-inset-bottom, 0px)",
+      }}>
+        {/* Drag handle */}
+        <div style={{ display: "flex", justifyContent: "center", padding: "12px 0 0" }}>
+          <div style={{ width: 40, height: 4, borderRadius: 2, background: "rgba(255,255,255,0.2)" }} />
+        </div>
+
+        <div style={{ padding: "16px 20px 24px" }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 16 }}>
+            <span style={{ fontSize: 32 }}>{tradition.emoji}</span>
+            <div>
+              <h2 style={{ margin: 0, fontSize: 18, fontWeight: 700, color: "#e2e8f0" }}>{tradition.label}</h2>
+              <div style={{ height: 3, borderRadius: 2, background: tradition.color, marginTop: 6, width: 40 }} />
+            </div>
+          </div>
+
+          <p style={{ color: "#94a3b8", fontSize: 14, lineHeight: 1.7, marginBottom: 16 }}>{tradition.description}</p>
+
+          <div style={{ marginBottom: 20 }}>
+            <div style={{ fontSize: 11, color: "#64748b", textTransform: "uppercase", letterSpacing: "0.08em", marginBottom: 8 }}>Common Practices</div>
+            <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
+              {tradition.practices.map((p) => (
+                <span key={p} style={{ padding: "6px 12px", borderRadius: 9999, background: tradition.color + "18", color: tradition.color, fontSize: 12 }}>{p}</span>
+              ))}
+            </div>
+          </div>
+
+          <button
+            onClick={onTalkToAgent}
+            style={{
+              width: "100%", padding: "16px", borderRadius: 12, minHeight: 56,
+              background: `linear-gradient(135deg, ${tradition.color}25, ${tradition.color}10)`,
+              border: `1px solid ${tradition.color}50`,
+              color: tradition.color, fontWeight: 700, fontSize: 15,
+              cursor: "pointer", marginBottom: 12,
+              display: "flex", alignItems: "center", justifyContent: "center", gap: 8,
+            }}
+          >
+            <span style={{ fontSize: 16 }}>🎙️</span>
+            Talk to {tradition.label} Agent
+          </button>
+
+          <div style={{ padding: "10px 14px", background: "rgba(255,255,255,0.03)", borderRadius: 8, fontSize: 12, color: "#64748b", lineHeight: 1.6 }}>
+            ⚕️ This is wellness education only. Consult a licensed practitioner before starting any traditional medicine regimen.
+          </div>
+        </div>
+      </div>
+    </>
   );
 }
 
@@ -209,21 +306,21 @@ export default function AltMedicinePage() {
   const mapInstanceRef = useRef<any>(null);
   const [selected, setSelected] = useState<TraditionKey | null>(null);
   const [mapLoaded, setMapLoaded] = useState(false);
-  const [mapError, setMapError] = useState<string | null>(null);
   const [callOpen, setCallOpen] = useState(false);
+  const [isMobile, setIsMobile] = useState(false);
 
-  // Load Mapbox (client-only, defensive)
   useEffect(() => {
-    if (typeof window === "undefined" || !mapRef.current) return;
+    const check = () => setIsMobile(window.innerWidth < 768);
+    check();
+    window.addEventListener("resize", check);
+    return () => window.removeEventListener("resize", check);
+  }, []);
 
-    const token = process.env.NEXT_PUBLIC_MAPBOX_TOKEN;
-    if (!token) {
-      console.warn("[alt-medicine] NEXT_PUBLIC_MAPBOX_TOKEN missing");
-      setMapError("Map token not configured. Tradition cards still work.");
-      return;
-    }
+  // Load Mapbox
+  useEffect(() => {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    let map: any;
 
-    // Inject mapbox CSS once
     if (!document.getElementById("mapbox-css")) {
       const link = document.createElement("link");
       link.id = "mapbox-css";
@@ -232,60 +329,42 @@ export default function AltMedicinePage() {
       document.head.appendChild(link);
     }
 
-    let cancelled = false;
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    let map: any = null;
+    import("mapbox-gl").then((mb) => {
+      const mgl = mb.default;
+      mgl.accessToken = process.env.NEXT_PUBLIC_MAPBOX_TOKEN ?? "";
 
-    (async () => {
-      try {
-        const mb = await import("mapbox-gl");
-        if (cancelled || !mapRef.current) return;
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        const mgl: any = mb.default;
-        mgl.accessToken = token;
+      if (!mapRef.current) return;
+      map = new mgl.Map({
+        container: mapRef.current,
+        style: "mapbox://styles/mapbox/dark-v11",
+        center: [20, 20],
+        zoom: 1.8,
+      });
 
-        map = new mgl.Map({
-          container: mapRef.current,
-          style: "mapbox://styles/mapbox/dark-v11",
-          center: [20, 20],
-          zoom: 1.8,
+      map.on("load", () => {
+        map.setFog({ color: "rgba(10,12,20,0.9)", "high-color": "rgba(8,12,20,0.7)", "horizon-blend": 0.05 });
+
+        (Object.entries(TRADITIONS) as [TraditionKey, TraditionData][]).forEach(([key, t]) => {
+          const el = document.createElement("div");
+          // 48px hit target so pins are tappable on mobile
+          el.style.cssText = `width:48px;height:48px;background:${t.color};border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:22px;cursor:pointer;border:2px solid rgba(255,255,255,0.25);box-shadow:0 0 14px ${t.color}70, 0 0 0 3px ${t.color}20;transition:transform 0.15s;`;
+          el.textContent = t.emoji;
+          el.title = t.label;
+          el.onmouseenter = () => { el.style.transform = "scale(1.15)"; };
+          el.onmouseleave = () => { el.style.transform = "scale(1)"; };
+          el.onclick = () => { selectTradition(key, map); };
+
+          new mgl.Marker({ element: el })
+            .setLngLat(t.coords as [number, number])
+            .addTo(map);
         });
 
-        map.on("error", (e: { error?: { message?: string } }) => {
-          console.error("[mapbox]", e.error?.message ?? e);
-        });
+        setMapLoaded(true);
+        mapInstanceRef.current = map;
+      });
+    });
 
-        map.on("load", () => {
-          if (cancelled) return;
-          try { map.setFog({ color: "rgba(10,12,20,0.9)", "high-color": "rgba(8,12,20,0.7)", "horizon-blend": 0.05 }); } catch { /* fog optional */ }
-
-          (Object.entries(TRADITIONS) as [TraditionKey, TraditionData][]).forEach(([key, t]) => {
-            const el = document.createElement("div");
-            el.style.cssText = `width:40px;height:40px;background:${t.color};border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:20px;cursor:pointer;border:2px solid rgba(255,255,255,0.25);box-shadow:0 0 14px ${t.color}70, 0 0 0 3px ${t.color}20;transition:transform 0.15s;`;
-            el.textContent = t.emoji;
-            el.title = t.label;
-            el.onmouseenter = () => { el.style.transform = "scale(1.15)"; };
-            el.onmouseleave = () => { el.style.transform = "scale(1)"; };
-            el.onclick = () => { selectTradition(key, map); };
-
-            new mgl.Marker({ element: el })
-              .setLngLat([...t.coords] as [number, number])
-              .addTo(map);
-          });
-
-          setMapLoaded(true);
-          mapInstanceRef.current = map;
-        });
-      } catch (e) {
-        console.error("[alt-medicine] map init failed", e);
-        if (!cancelled) setMapError(e instanceof Error ? e.message : "Map failed to load");
-      }
-    })();
-
-    return () => {
-      cancelled = true;
-      try { map?.remove(); } catch { /* ignore */ }
-    };
+    return () => map?.remove();
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -294,7 +373,7 @@ export default function AltMedicinePage() {
     const t = TRADITIONS[key];
     map.flyTo({ center: t.coords as [number, number], zoom: t.zoom, duration: 2000, essential: true });
     setSelected(key);
-    setCallOpen(false); // close any existing call when switching
+    setCallOpen(false);
   };
 
   const handleCardClick = (key: TraditionKey) => {
@@ -306,89 +385,144 @@ export default function AltMedicinePage() {
   const tradition = selected ? TRADITIONS[selected] : null;
 
   return (
-    <div style={{ minHeight: "100vh", display: "flex", flexDirection: "column" }}>
+    <div style={{ minHeight: "100vh", display: "flex", flexDirection: "column", background: "#0a0c14" }}>
       {/* Header */}
-      <div style={{ padding: "16px 24px", borderBottom: "1px solid var(--border)", display: "flex", alignItems: "center", gap: 16 }}>
-        <a href={`/dashboard?run_id=${runId}`} style={{ color: "#64748b", fontSize: 14, textDecoration: "none" }}>← Dashboard</a>
-        <h1 style={{ margin: 0, fontSize: 20, fontWeight: 800 }}>🌍 Global Healing Map</h1>
-        <span style={{ marginLeft: 8, fontSize: 13, color: "#64748b" }}>Click a pin or tradition to explore · then talk to an AI agent</span>
+      <div style={{
+        padding: "12px 16px",
+        borderBottom: "1px solid rgba(255,255,255,0.08)",
+        display: "flex", alignItems: "center", gap: 12,
+        flexWrap: "wrap",
+        flexShrink: 0,
+      }}>
+        <a
+          href={`/dashboard?run_id=${runId}`}
+          style={{ color: "#64748b", fontSize: 14, textDecoration: "none", minHeight: 44, display: "flex", alignItems: "center", whiteSpace: "nowrap" }}
+        >
+          ← Dashboard
+        </a>
+        <h1 style={{ margin: 0, fontSize: 18, fontWeight: 800, whiteSpace: "nowrap" }}>🌍 Global Healing Map</h1>
+        <span style={{ fontSize: 12, color: "#64748b", display: isMobile ? "none" : "inline" }}>
+          Tap a pin or tradition to explore · then talk to an AI agent
+        </span>
       </div>
 
-      <div style={{ flex: 1, display: "flex", minHeight: 0 }}>
+      {/* Body — stacks vertically on mobile, side-by-side on desktop */}
+      <div style={{
+        flex: 1,
+        display: "flex",
+        flexDirection: isMobile ? "column" : "row",
+        minHeight: 0,
+      }}>
         {/* Map */}
-        <div style={{ flex: 1, position: "relative" }}>
+        <div style={{ flex: 1, position: "relative", height: isMobile ? "55vw" : "auto", minHeight: isMobile ? 260 : "auto" }}>
           <div ref={mapRef} style={{ position: "absolute", inset: 0 }} />
           {!mapLoaded && (
-            <div style={{ position: "absolute", inset: 0, display: "flex", alignItems: "center", justifyContent: "center", background: "var(--bg)", color: mapError ? "#f87171" : "#64748b", padding: 24, textAlign: "center" }}>
-              {mapError ?? "Loading global healing map…"}
+            <div style={{ position: "absolute", inset: 0, display: "flex", alignItems: "center", justifyContent: "center", background: "#0a0c14", color: "#64748b", fontSize: 14 }}>
+              Loading global healing map…
             </div>
           )}
         </div>
 
-        {/* Side panel */}
-        <div style={{ width: 340, background: "var(--surface)", borderLeft: "1px solid var(--border)", overflowY: "auto" }}>
-          {tradition && selected ? (
-            <div style={{ padding: 24 }}>
-              <div style={{ fontSize: 36, marginBottom: 8 }}>{tradition.emoji}</div>
-              <h2 style={{ margin: "0 0 4px", fontSize: 18, fontWeight: 700 }}>{tradition.label}</h2>
-              <div style={{ height: 3, borderRadius: 2, background: tradition.color, marginBottom: 16, width: 48 }} />
-              <p style={{ color: "#94a3b8", fontSize: 13, lineHeight: 1.7, marginBottom: 20 }}>{tradition.description}</p>
-              <div style={{ marginBottom: 20 }}>
-                <div style={{ fontSize: 12, color: "#64748b", textTransform: "uppercase", letterSpacing: "0.08em", marginBottom: 8 }}>Common Practices</div>
-                <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
-                  {tradition.practices.map((p) => (
-                    <span key={p} style={{ padding: "4px 10px", borderRadius: 9999, background: tradition.color + "15", color: tradition.color, fontSize: 12 }}>{p}</span>
-                  ))}
+        {/* Side panel — hidden on mobile when tradition selected (use bottom sheet instead) */}
+        {!isMobile && (
+          <div style={{ width: 340, background: "#111827", borderLeft: "1px solid rgba(255,255,255,0.08)", overflowY: "auto" }}>
+            {tradition && selected ? (
+              <div style={{ padding: 24 }}>
+                <div style={{ fontSize: 36, marginBottom: 8 }}>{tradition.emoji}</div>
+                <h2 style={{ margin: "0 0 4px", fontSize: 18, fontWeight: 700, color: "#e2e8f0" }}>{tradition.label}</h2>
+                <div style={{ height: 3, borderRadius: 2, background: tradition.color, marginBottom: 16, width: 48 }} />
+                <p style={{ color: "#94a3b8", fontSize: 13, lineHeight: 1.7, marginBottom: 20 }}>{tradition.description}</p>
+                <div style={{ marginBottom: 20 }}>
+                  <div style={{ fontSize: 12, color: "#64748b", textTransform: "uppercase", letterSpacing: "0.08em", marginBottom: 8 }}>Common Practices</div>
+                  <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
+                    {tradition.practices.map((p) => (
+                      <span key={p} style={{ padding: "4px 10px", borderRadius: 9999, background: tradition.color + "15", color: tradition.color, fontSize: 12 }}>{p}</span>
+                    ))}
+                  </div>
+                </div>
+
+                <button
+                  onClick={() => setCallOpen(true)}
+                  style={{
+                    width: "100%", padding: "12px 16px", borderRadius: 12,
+                    background: `linear-gradient(135deg, ${tradition.color}25, ${tradition.color}10)`,
+                    border: `1px solid ${tradition.color}50`,
+                    color: tradition.color, fontWeight: 700, fontSize: 14,
+                    cursor: "pointer", marginBottom: 12,
+                    display: "flex", alignItems: "center", justifyContent: "center", gap: 8,
+                    minHeight: 48,
+                  }}
+                >
+                  <span style={{ fontSize: 16 }}>🎙️</span>
+                  Talk to {tradition.label} Agent
+                </button>
+
+                <div style={{ padding: "10px 14px", background: "rgba(255,255,255,0.03)", borderRadius: 8, fontSize: 12, color: "#64748b", lineHeight: 1.6 }}>
+                  ⚕️ This is wellness education only. Consult a licensed practitioner before starting any traditional medicine regimen.
                 </div>
               </div>
-
-              {/* Talk to Agent button */}
-              <button
-                onClick={() => setCallOpen(true)}
-                style={{
-                  width: "100%", padding: "12px 16px", borderRadius: 12,
-                  background: `linear-gradient(135deg, ${tradition.color}25, ${tradition.color}10)`,
-                  border: `1px solid ${tradition.color}50`,
-                  color: tradition.color, fontWeight: 700, fontSize: 14,
-                  cursor: "pointer", marginBottom: 12,
-                  display: "flex", alignItems: "center", justifyContent: "center", gap: 8,
-                }}
-              >
-                <span style={{ fontSize: 16 }}>🎙️</span>
-                Talk to {tradition.label} Agent
-              </button>
-
-              <div style={{ padding: "10px 14px", background: "rgba(255,255,255,0.03)", borderRadius: 8, fontSize: 12, color: "#64748b", lineHeight: 1.6 }}>
-                ⚕️ This is wellness education only. Consult a licensed practitioner before starting any traditional medicine regimen.
+            ) : (
+              <div style={{ padding: 24 }}>
+                <div style={{ fontSize: 13, color: "#64748b", marginBottom: 20 }}>Choose a healing tradition to explore:</div>
+                {(Object.entries(TRADITIONS) as [TraditionKey, TraditionData][]).map(([key, t]) => (
+                  <button
+                    key={key}
+                    onClick={() => handleCardClick(key)}
+                    style={{ width: "100%", background: "none", border: "1px solid rgba(255,255,255,0.08)", borderRadius: 12, padding: "14px 16px", marginBottom: 10, cursor: "pointer", textAlign: "left", display: "flex", alignItems: "center", gap: 12, minHeight: 60 }}
+                  >
+                    <span style={{ fontSize: 24 }}>{t.emoji}</span>
+                    <div>
+                      <div style={{ fontWeight: 600, fontSize: 14, color: "#e2e8f0" }}>{t.label}</div>
+                      <div style={{ fontSize: 12, color: t.color, marginTop: 2 }}>{key}</div>
+                    </div>
+                  </button>
+                ))}
               </div>
-            </div>
-          ) : (
-            <div style={{ padding: 24 }}>
-              <div style={{ fontSize: 13, color: "#64748b", marginBottom: 20 }}>Choose a healing tradition to explore:</div>
+            )}
+          </div>
+        )}
+
+        {/* Mobile tradition list (shown below map when nothing selected) */}
+        {isMobile && !selected && (
+          <div style={{ background: "#111827", overflowY: "auto", padding: "16px 16px 32px" }}>
+            <div style={{ fontSize: 13, color: "#64748b", marginBottom: 16 }}>Choose a healing tradition to explore:</div>
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
               {(Object.entries(TRADITIONS) as [TraditionKey, TraditionData][]).map(([key, t]) => (
                 <button
                   key={key}
                   onClick={() => handleCardClick(key)}
-                  style={{ width: "100%", background: "none", border: "1px solid var(--border)", borderRadius: 12, padding: "14px 16px", marginBottom: 10, cursor: "pointer", textAlign: "left", display: "flex", alignItems: "center", gap: 12 }}
+                  style={{
+                    background: "rgba(255,255,255,0.04)", border: `1px solid ${t.color}30`,
+                    borderRadius: 12, padding: "14px 12px", cursor: "pointer", textAlign: "left",
+                    display: "flex", flexDirection: "column", gap: 6, minHeight: 80,
+                  }}
                 >
                   <span style={{ fontSize: 24 }}>{t.emoji}</span>
-                  <div>
-                    <div style={{ fontWeight: 600, fontSize: 14, color: "#e2e8f0" }}>{t.label}</div>
-                    <div style={{ fontSize: 12, color: t.color, marginTop: 2 }}>{key}</div>
-                  </div>
+                  <div style={{ fontWeight: 600, fontSize: 12, color: "#e2e8f0", lineHeight: 1.3 }}>{t.label}</div>
                 </button>
               ))}
             </div>
-          )}
-        </div>
+          </div>
+        )}
       </div>
 
-      {/* Floating call window */}
+      {/* Mobile bottom sheet for selected tradition */}
+      {isMobile && selected && tradition && !callOpen && (
+        <TraditionBottomSheet
+          selected={selected}
+          tradition={tradition}
+          onClose={() => setSelected(null)}
+          onTalkToAgent={() => setCallOpen(true)}
+        />
+      )}
+
+      {/* Call window — full-width bottom modal on mobile, floating corner on desktop */}
       {callOpen && selected && tradition && (
         <AltMedicineCallWindow
           traditionKey={selected}
           tradition={tradition}
           onClose={() => setCallOpen(false)}
+          isMobile={isMobile}
         />
       )}
     </div>
