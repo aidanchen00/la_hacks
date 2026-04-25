@@ -369,18 +369,29 @@ function TextChatView({
         </div>
 
         {/* Input row */}
-        <div className="flex gap-2 pt-2">
-          <input
+        <div className="flex gap-2 pt-2 items-end">
+          <textarea
             value={input}
-            onChange={(e) => setInput(e.target.value)}
-            onKeyDown={(e) => { if (e.key === "Enter") handleSend(); }}
+            rows={1}
+            onChange={(e) => {
+              setInput(e.target.value);
+              e.target.style.height = "auto";
+              e.target.style.height = `${e.target.scrollHeight}px`;
+            }}
+            onKeyDown={(e) => {
+              if (e.key === "Enter" && !e.shiftKey) {
+                e.preventDefault();
+                handleSend();
+              }
+            }}
             placeholder={t.typePlaceholder}
-            className="flex-1 bg-[#EFEAE0] rounded-full px-4 py-3 text-sm text-[#3D3D3D] outline-none border border-[#1F3A2E]/10 focus:border-[#1F3A2E]/30 transition-colors"
+            className="flex-1 bg-[#EFEAE0] rounded-2xl px-4 py-3 text-sm text-[#3D3D3D] outline-none border border-[#1F3A2E]/10 focus:border-[#1F3A2E]/30 transition-colors resize-none overflow-hidden max-h-40"
+            style={{ lineHeight: "1.5" }}
           />
           <button
             onClick={handleSend}
             disabled={!input.trim() || thinking}
-            className="bg-[#1F3A2E] text-white rounded-full px-5 py-3 text-sm font-medium hover:bg-[#2A4D3D] transition-colors disabled:opacity-40"
+            className="bg-[#1F3A2E] text-white rounded-full px-5 py-3 text-sm font-medium hover:bg-[#2A4D3D] transition-colors disabled:opacity-40 shrink-0"
           >
             {t.send}
           </button>

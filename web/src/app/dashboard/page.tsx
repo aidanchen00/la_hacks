@@ -173,9 +173,9 @@ function DashboardContent() {
           <motion.div
             animate={{ opacity: [0.5, 1, 0.5] }}
             transition={{ duration: 2, repeat: Infinity }}
-            className="text-center py-20"
+            className="flex items-center justify-center min-h-[70vh]"
           >
-            <p className="font-serif text-[#1F3A2E] text-2xl font-medium">
+            <p className="font-serif text-[#1F3A2E] text-2xl font-medium text-center">
               Analyzing your intake…
             </p>
           </motion.div>
