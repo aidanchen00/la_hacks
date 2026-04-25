@@ -481,7 +481,7 @@ function VoiceIntake({ onShowHistory, language, onLanguageChange }: {
 
   if (submitting) {
     return (
-      <div className="flex flex-col h-full items-center justify-center bg-[#F4F1EA]">
+      <div className="flex flex-col min-h-screen items-center justify-center bg-[#F4F1EA]">
         <motion.div
           animate={{ opacity: [0.5, 1, 0.5] }}
           transition={{ duration: 2, repeat: Infinity }}
