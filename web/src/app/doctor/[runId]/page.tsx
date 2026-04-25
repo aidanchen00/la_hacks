@@ -3,6 +3,7 @@
 import { useEffect, useState, useRef, useCallback } from "react";
 import { useParams, useRouter, useSearchParams } from "next/navigation";
 import { motion } from "motion/react";
+import LanguagePicker from "@/app/components/LanguagePicker";
 import {
   getRun, runRanker, getRanker, createDoctorCheckout,
   type RankerSelectionItem,
@@ -28,14 +29,42 @@ interface SessionInfo {
   mock?: boolean;
 }
 
-function parseProviders(output: string | null | undefined): ProviderResult[] {
+function parseProviders(output: string | object | null | undefined): ProviderResult[] {
   if (!output) return [];
-  try {
-    const parsed = JSON.parse(output);
-    return Array.isArray(parsed.appointments) ? parsed.appointments : [];
-  } catch {
-    return [];
+
+  // Accept already-parsed objects, raw strings, and strings that wrap JSON in
+  // markdown fences (```json ... ```). Try several common keys BrowserUse
+  // schemas may emit.
+  let parsed: unknown = output;
+  if (typeof output === "string") {
+    let text = output.trim();
+    const fence = text.match(/```(?:json)?\s*([\s\S]*?)\s*```/i);
+    if (fence) text = fence[1];
+    try {
+      parsed = JSON.parse(text);
+    } catch {
+      // Sometimes the SDK returns the structured object's stringification
+      // wrapped in extra prose; try to extract the first {...} block.
+      const m = text.match(/\{[\s\S]*\}/);
+      if (m) {
+        try { parsed = JSON.parse(m[0]); } catch { return []; }
+      } else {
+        return [];
+      }
+    }
   }
+
+  if (!parsed || typeof parsed !== "object") return [];
+  const obj = parsed as Record<string, unknown>;
+
+  const candidate =
+    obj.appointments ?? obj.providers ?? obj.results ?? obj.items ??
+    (typeof obj.data === "object" && obj.data
+      ? (obj.data as Record<string, unknown>).appointments ??
+        (obj.data as Record<string, unknown>).providers
+      : undefined);
+
+  return Array.isArray(candidate) ? (candidate as ProviderResult[]) : [];
 }
 
 // ---------------------------------------------------------------------------
@@ -155,10 +184,6 @@ function ResultsModal({
           </div>
         )}
 
-        <div className="bg-[#FEE2E2] border border-[#DC2626]/15 rounded-xl px-4 py-2.5 mt-5 text-xs text-[#DC2626]">
-          ⚕️ Verify provider info directly. Wellness navigation only — not a medical referral.
-        </div>
-
         <div className="flex gap-3 mt-5">
           <button
             onClick={onClose}
@@ -276,10 +301,13 @@ export default function DoctorPage() {
     return () => { if (pollRef.current) clearInterval(pollRef.current); };
   }, [started, sessions]);
 
-  // Stop active BrowserUse sessions on unmount or tab close to free quota
+  // Stop active BrowserUse sessions on tab close (NOT on every sessions state update —
+  // that was killing live streams the moment polling updated them).
+  const sessionsRef = useRef<SessionInfo[]>([]);
+  useEffect(() => { sessionsRef.current = sessions; }, [sessions]);
   useEffect(() => {
     const stop = () => {
-      const ids = sessions.map((s) => s.sessionId).filter(Boolean);
+      const ids = sessionsRef.current.map((s) => s.sessionId).filter(Boolean);
       if (!ids.length) return;
       const body = JSON.stringify({ sessionIds: ids });
       if (typeof navigator !== "undefined" && navigator.sendBeacon) {
@@ -291,9 +319,10 @@ export default function DoctorPage() {
     window.addEventListener("beforeunload", stop);
     return () => {
       window.removeEventListener("beforeunload", stop);
+      // Only fire on actual page-unmount (route change), not on every sessions update.
       stop();
     };
-  }, [sessions]);
+  }, []);
 
   const statusDot = (s: SessionInfo) =>
     s.done ? "#16A34A" : s.status === "error" ? "#DC2626" : "#D97706";
@@ -437,6 +466,9 @@ export default function DoctorPage() {
               View all {totalProvidersFound} appointments →
             </button>
           )}
+          <div className={started && totalProvidersFound > 0 ? "" : "ml-auto"}>
+            <LanguagePicker />
+          </div>
         </div>
 
         {/* Disclaimer */}
