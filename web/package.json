@@ -4,7 +4,7 @@
   "private": true,
   "description": "CareFlow — voice-first healthcare/wellness care-navigation app (LA Hacks 2026)",
   "scripts": {
-    "dev": "tsx server.ts",
+    "dev": "concurrently --names \"next,agent\" --prefix-colors \"green,blue\" \"tsx server.ts\" \"cd livekit && npm install --silent && tsx agent.ts dev\"",
     "build": "next build",
     "start": "NODE_ENV=production tsx server.ts",
     "lint": "eslint"
@@ -41,6 +41,7 @@
     "@types/node": "^20",
     "@types/react": "^19",
     "@types/react-dom": "^19",
+    "concurrently": "^9.2.1",
     "eslint": "^9",
     "eslint-config-next": "16.1.6",
     "tailwindcss": "^4",

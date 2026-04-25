@@ -1,7 +1,6 @@
-const BACKEND = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000";
-
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
-  const res = await fetch(`${BACKEND}${path}`, {
+  const base = typeof window !== "undefined" ? "" : `http://localhost:${process.env.PORT ?? 3000}`;
+  const res = await fetch(`${base}/api${path}`, {
     headers: { "Content-Type": "application/json" },
     ...init,
   });
@@ -61,5 +60,5 @@ export function listRuns(): Promise<RunSummary[]> {
 }
 
 export function getSSEUrl(runId: string): string {
-  return `${BACKEND}/runs/${runId}/events`;
+  return `/api/runs/${runId}/events`;
 }

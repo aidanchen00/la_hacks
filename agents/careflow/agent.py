@@ -1,5 +1,5 @@
 """
-CareFlow Agentverse Agent — the ASI:One / OmegaClaw-facing entry point.
+Prana Agentverse Agent — the ASI:One / OmegaClaw-facing entry point.
 
 Responsibilities:
 - Registered on Agentverse as a discoverable wellness-navigation skill
@@ -76,7 +76,7 @@ careflow = Agent(
     readme_path=str(Path(__file__).parent / "README.md"),
 )
 
-logger.info(f"CareFlow agent address: {careflow.address}")
+logger.info(f"Prana agent address: {careflow.address}")
 
 # In-memory store for ASI:One sender addresses
 _pending_chat: Dict[str, str] = {}     # run_id → sender_address (routing phase)
@@ -86,7 +86,7 @@ _pharmacy_chat: Dict[str, str] = {}   # run_id → sender_address (waiting for s
 # LLM routing (same logic as api/routing.py but runs in-agent)
 # ---------------------------------------------------------------------------
 
-ROUTING_SYSTEM = """You are the CareFlow Orchestrator. Given a wellness intake message, return a JSON routing decision.
+ROUTING_SYSTEM = """You are the Prana Orchestrator. Given a wellness intake message, return a JSON routing decision.
 
 PATHS: doctor | pharmacy | mental_health | alt_medicine | self_care
 URGENCY: emergency | urgent | routine | wellness
@@ -134,7 +134,7 @@ async def route_text(text: str) -> Dict[str, Any]:
             "urgency": "wellness",
             "recommended_path": "self_care",
             "summary": "Wellness intake recorded. Please review your dashboard.",
-            "next_actions": ["Open your CareFlow dashboard", "Consult a healthcare professional if needed"],
+            "next_actions": ["Open your Prana dashboard", "Consult a healthcare professional if needed"],
             "payment_required": False,
             "payment_amount_usd": 0.0,
             "requires_doctor_approval": False,
@@ -309,7 +309,7 @@ async def handle_chat(ctx: Context, sender: str, msg: ChatMessage) -> None:
         await _trigger_budget(ctx, run_id, text, decision)
 
     result_text = (
-        f"CareFlow Routing Decision (run: {run_id[:8]})\n\n"
+        f"Prana Routing Decision (run: {run_id[:8]})\n\n"
         f"Urgency: {decision.get('urgency', 'wellness').upper()}\n"
         f"Recommended Path: {decision.get('recommended_path', 'self_care')}\n\n"
         f"{decision.get('summary', '')}\n\n"
@@ -403,7 +403,7 @@ async def on_commit_payment(ctx: Context, sender: str, msg: CommitPayment) -> No
 
     await ctx.send(sender, ChatMessage(
         timestamp=datetime.utcnow(), msg_id=uuid4(),
-        content=[TextContent(type="text", text="Payment confirmed! You can now access full CareFlow navigation services.")],
+        content=[TextContent(type="text", text="Payment confirmed! You can now access full Prana navigation services.")],
     ))
 
 

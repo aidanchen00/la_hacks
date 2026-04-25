@@ -35,6 +35,8 @@ const TRANSLATIONS = {
     disclaimer: "Prana is a wellness education tool — not a substitute for licensed medical care. For emergencies, call 911.",
     speakNow: "Speak now — I'm listening…",
     endSession: "End Session",
+    typePlaceholder: "Type your symptoms…",
+    send: "Send",
   },
   es: {
     history: "Historial",
@@ -45,6 +47,8 @@ const TRANSLATIONS = {
     disclaimer: "Prana es una herramienta educativa — no sustituye la atención médica. Para emergencias, llama al 911.",
     speakNow: "Habla ahora — te estoy escuchando…",
     endSession: "Terminar sesión",
+    typePlaceholder: "Escribe tus síntomas…",
+    send: "Enviar",
   },
   zh: {
     history: "历史记录",
@@ -55,6 +59,8 @@ const TRANSLATIONS = {
     disclaimer: "Prana 是健康教育工具，不能替代专业医疗建议。紧急情况请拨打 911。",
     speakNow: "请说话 — 我正在聆听…",
     endSession: "结束会话",
+    typePlaceholder: "输入您的症状…",
+    send: "发送",
   },
 } as const;
 
@@ -273,20 +279,135 @@ function RoomView({ onIntakeComplete, t }: { onIntakeComplete: (data: IntakeData
   );
 }
 
-function VoiceIntake({ onShowHistory }: { onShowHistory: () => void }) {
-  const [language, setLanguage] = useState<Lang>("en");
-  const [langOpen, setLangOpen] = useState(false);
-  const langRef = useRef<Lang>("en");
-  langRef.current = language;
+function TextChatView({
+  onIntakeComplete, t, language,
+}: {
+  onIntakeComplete: (data: IntakeData) => void;
+  t: Translations;
+  language: string;
+}) {
+  const [messages, setMessages] = useState<{ role: "user" | "assistant"; content: string }[]>([]);
+  const [input, setInput] = useState("");
+  const [thinking, setThinking] = useState(false);
+  const bottomRef = useRef<HTMLDivElement>(null);
+  const onIntakeCompleteRef = useRef(onIntakeComplete);
+  onIntakeCompleteRef.current = onIntakeComplete;
+  const doneRef = useRef(false);
 
+  const callApi = useCallback(async (msgs: { role: "user" | "assistant"; content: string }[]) => {
+    setThinking(true);
+    try {
+      const res = await fetch("/api/chat", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ messages: msgs, language }),
+      });
+      const data = await res.json();
+      if (data.content) {
+        setMessages((prev) => [...prev, { role: "assistant", content: data.content }]);
+      }
+      if (data.action?.action === "complete" && !doneRef.current) {
+        doneRef.current = true;
+        onIntakeCompleteRef.current({
+          summary: data.action.summary,
+          symptoms: data.action.symptoms,
+          suggested_path: data.action.suggested_path,
+          urgency: data.action.urgency,
+        });
+      }
+    } catch { /* ignore */ }
+    finally { setThinking(false); }
+  }, [language]); // onIntakeComplete accessed via ref — won't re-create callApi
+
+  // Greeting fires exactly once on mount
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  useEffect(() => { callApi([]); }, []);
+
+  useEffect(() => {
+    bottomRef.current?.scrollIntoView({ behavior: "smooth" });
+  }, [messages, thinking]);
+
+  const handleSend = async () => {
+    if (!input.trim() || thinking) return;
+    const userMsg = { role: "user" as const, content: input.trim() };
+    const next = [...messages, userMsg];
+    setMessages(next);
+    setInput("");
+    await callApi(next);
+  };
+
+  return (
+    <div className="flex flex-col h-full bg-[#F4F1EA] px-6 py-8">
+      {/* Chat area */}
+      <div className="w-full max-w-md mx-auto flex flex-col gap-3 flex-1 min-h-0">
+        <div className="flex-1 overflow-y-auto space-y-3 pr-1">
+          {messages.map((msg, i) => (
+            <div key={i} className={`flex ${msg.role === "user" ? "justify-end" : "justify-start"}`}>
+              <div className={`rounded-2xl px-4 py-3 text-sm leading-relaxed max-w-[85%] ${
+                msg.role === "user"
+                  ? "bg-[#1F3A2E] text-white"
+                  : "bg-[#EFEAE0] text-[#3D3D3D]"
+              }`}>
+                {msg.content}
+              </div>
+            </div>
+          ))}
+          {thinking && (
+            <div className="flex justify-start">
+              <div className="bg-[#EFEAE0] rounded-2xl px-4 py-3">
+                <motion.span
+                  className="text-[#6B7280] text-sm"
+                  animate={{ opacity: [0.4, 1, 0.4] }}
+                  transition={{ duration: 1, repeat: Infinity }}
+                >
+                  ···
+                </motion.span>
+              </div>
+            </div>
+          )}
+          <div ref={bottomRef} />
+        </div>
+
+        {/* Input row */}
+        <div className="flex gap-2 pt-2">
+          <input
+            value={input}
+            onChange={(e) => setInput(e.target.value)}
+            onKeyDown={(e) => { if (e.key === "Enter") handleSend(); }}
+            placeholder={t.typePlaceholder}
+            className="flex-1 bg-[#EFEAE0] rounded-full px-4 py-3 text-sm text-[#3D3D3D] outline-none border border-[#1F3A2E]/10 focus:border-[#1F3A2E]/30 transition-colors"
+          />
+          <button
+            onClick={handleSend}
+            disabled={!input.trim() || thinking}
+            className="bg-[#1F3A2E] text-white rounded-full px-5 py-3 text-sm font-medium hover:bg-[#2A4D3D] transition-colors disabled:opacity-40"
+          >
+            {t.send}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function VoiceIntake({ onShowHistory, language, onLanguageChange }: {
+  onShowHistory: () => void;
+  language: Lang;
+  onLanguageChange: (l: Lang) => void;
+}) {
+  const [langOpen, setLangOpen] = useState(false);
+
+  // tokenSource is stable per mount — component remounts (via key) when language changes
   const tokenSource = useMemo(
     () => TokenSource.endpoint(`/api/token?lang=${language}`),
-    [language]
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    []
   );
 
   const t = TRANSLATIONS[language];
   const session = useSession(tokenSource);
   const [started, setStarted] = useState(false);
+  const [textMode, setTextMode] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const router = useRouter();
 
@@ -313,7 +434,7 @@ function VoiceIntake({ onShowHistory }: { onShowHistory: () => void }) {
 
       if (data.summary) {
         const emailBody = `
-          <h2>Your CareFlow Wellness Intake</h2>
+          <h2>Your Prana Wellness Intake</h2>
           <p><strong>Summary:</strong> ${data.summary}</p>
           <p><strong>Concerns noted:</strong> ${data.symptoms?.join(", ") ?? "See dashboard"}</p>
           <p><strong>Suggested path:</strong> ${data.suggested_path ?? "review dashboard"}</p>
@@ -324,7 +445,7 @@ function VoiceIntake({ onShowHistory }: { onShowHistory: () => void }) {
         fetch("/api/composio/email", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ subject: "Your CareFlow Wellness Intake Summary", body: emailBody }),
+          body: JSON.stringify({ subject: "Your Prana Wellness Intake Summary", body: emailBody }),
         }).catch(() => {});
       }
 
@@ -337,9 +458,9 @@ function VoiceIntake({ onShowHistory }: { onShowHistory: () => void }) {
   }, [session, router]);
 
   useEffect(() => {
-    if (started) session.start().catch(console.error);
+    if (started && !textMode) session.start().catch(console.error);
     else session.end().catch(() => {});
-  }, [started, session]);
+  }, [started, textMode, session]);
 
   useEvents(session, SessionEvent.MediaDevicesError, (error) => {
     const failure = MediaDeviceFailure.getFailure(error);
@@ -359,6 +480,10 @@ function VoiceIntake({ onShowHistory }: { onShowHistory: () => void }) {
         </motion.div>
       </div>
     );
+  }
+
+  if (started && textMode) {
+    return <TextChatView onIntakeComplete={handleIntakeComplete} t={t} language={language} />;
   }
 
   if (started) {
@@ -401,7 +526,7 @@ function VoiceIntake({ onShowHistory }: { onShowHistory: () => void }) {
                   {(["en", "es", "zh"] as Lang[]).map((l) => (
                     <button
                       key={l}
-                      onClick={() => { setLanguage(l); setLangOpen(false); }}
+                      onClick={() => { onLanguageChange(l); setLangOpen(false); }}
                       className={`w-full text-left px-4 py-2 text-sm transition-colors hover:bg-[#F4F1EA] ${language === l ? "text-[#1F3A2E] font-semibold" : "text-[#3D3D3D]"}`}
                     >
                       {LANG_LABELS[l]}
@@ -449,7 +574,10 @@ function VoiceIntake({ onShowHistory }: { onShowHistory: () => void }) {
               {t.startTalking}
             </motion.button>
             <div className="flex items-center justify-center gap-4">
-              <button className="text-[#3D3D3D] text-sm hover:text-[#1F3A2E] transition-colors">
+              <button
+                onClick={() => { setTextMode(true); setStarted(true); }}
+                className="text-[#3D3D3D] text-sm underline underline-offset-2 hover:text-[#1F3A2E] transition-colors"
+              >
                 {t.typeSymptoms}
               </button>
               <span className="text-[#6B7280] text-xs">·</span>
@@ -472,13 +600,19 @@ function VoiceIntake({ onShowHistory }: { onShowHistory: () => void }) {
 function HomePageInner() {
   const params = useSearchParams();
   const [showHistory, setShowHistory] = useState(params.get("history") === "true");
+  const [language, setLanguage] = useState<Lang>("en");
 
   return (
     <main style={{ minHeight: "100vh", display: "flex", flexDirection: "column" }}>
       {showHistory ? (
         <RecentSessions onClose={() => setShowHistory(false)} />
       ) : (
-        <VoiceIntake onShowHistory={() => setShowHistory(true)} />
+        <VoiceIntake
+          key={language}
+          language={language}
+          onLanguageChange={setLanguage}
+          onShowHistory={() => setShowHistory(true)}
+        />
       )}
     </main>
   );

@@ -35,9 +35,9 @@ export async function POST(req: Request) {
     };
     at.addGrant(grant);
 
-    if (body.metadata) {
-      at.metadata = typeof body.metadata === "string" ? body.metadata : JSON.stringify(body.metadata);
-    }
+    // Always embed lang in metadata so the agent can read it reliably
+    const existingMeta = body.metadata ? (typeof body.metadata === "string" ? JSON.parse(body.metadata) : body.metadata) : {};
+    at.metadata = JSON.stringify({ ...existingMeta, lang });
 
     const participantToken = await at.toJwt();
 
