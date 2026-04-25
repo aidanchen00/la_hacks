@@ -286,16 +286,19 @@ export function buildKGData(): KGData {
   };
 
   // 1. Real intake runs — the only "session"-type node from now on.
+  //    Limit to runs from 2026-04-24 onward so the graph reflects current demo data.
   const runs = db.prepare(`
-    SELECT r.id, r.user_id, r.created_at, r.intake_summary,
+    SELECT r.id, r.user_id, r.created_at, r.instruction, r.intake_summary,
            rd.urgency, rd.recommended_path, rd.summary AS rd_summary
     FROM runs r
     LEFT JOIN routing_decisions rd ON rd.run_id = r.id
-    ORDER BY r.created_at DESC LIMIT 24
+    WHERE r.created_at >= '2026-04-24'
+    ORDER BY r.created_at DESC LIMIT 30
   `).all() as {
     id: string; user_id: number | null; created_at: string;
-    intake_summary: string | null; urgency: string | null;
-    recommended_path: string | null; rd_summary: string | null;
+    instruction: string | null; intake_summary: string | null;
+    urgency: string | null; recommended_path: string | null;
+    rd_summary: string | null;
   }[];
 
   for (const r of runs) {
@@ -380,6 +383,52 @@ export function buildKGData(): KGData {
     });
     for (const sid of linkedSymptoms) {
       links.push({ source: `condition-${c.id}`, target: `symptom-${sid}`, weight: 1 });
+    }
+  }
+
+  // 3b. Bridge real intake runs to symptom nodes by scanning each run's
+  //     instruction + summary text for known symptom names. Most real runs
+  //     have user_id=NULL so the join above doesn't link them; this catches
+  //     the "headache, fever, anxiety" mentions and wires them into the mix.
+  const symptomNameToId = new Map<string, number>();
+  for (const us of userSymptoms) {
+    symptomNameToId.set(us.sym_name.toLowerCase(), us.symptom_id);
+  }
+  // Also include any symptoms not yet pulled (for matching only — they'll
+  // become nodes if mentioned).
+  const allSymptoms = db.prepare("SELECT id, name, category, mention_count FROM symptoms").all() as { id: number; name: string; category: string | null; mention_count: number }[];
+  const symMeta = new Map<number, { name: string; category: string | null; mention_count: number }>();
+  for (const s of allSymptoms) {
+    symptomNameToId.set(s.name.toLowerCase(), s.id);
+    symMeta.set(s.id, s);
+  }
+
+  for (const r of runs) {
+    const haystack = [r.instruction, r.intake_summary, r.rd_summary]
+      .filter(Boolean).join(" ").toLowerCase();
+    if (!haystack) continue;
+    const matched = new Set<number>();
+    for (const [name, id] of symptomNameToId) {
+      // word-boundary-ish match to avoid e.g. "ache" inside "headache" matching "ache"
+      const re = new RegExp(`(^|[^a-z])${name.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}([^a-z]|$)`, "i");
+      if (re.test(haystack)) matched.add(id);
+    }
+    for (const sid of matched) {
+      const symId = `symptom-${sid}`;
+      if (!nodeMap.has(symId)) {
+        const m = symMeta.get(sid);
+        if (m) {
+          addNode({
+            id: symId,
+            name: m.name,
+            type: "symptom",
+            val: Math.max(2, Math.min(5, Math.ceil(m.mention_count / 2))),
+            description: `${m.category ? m.category[0].toUpperCase() + m.category.slice(1) + " symptom. " : ""}${m.mention_count} mention${m.mention_count === 1 ? "" : "s"} across all users.`,
+            meta: { category: m.category ?? "general", globalCount: m.mention_count },
+          });
+        }
+      }
+      links.push({ source: `run-${r.id}`, target: symId, weight: 1 });
     }
   }
 
