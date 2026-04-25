@@ -1,0 +1,6 @@
+uagents>=0.22.0
+uagents-core>=0.4.0
+openai>=1.75.0
+httpx>=0.28.0
+stripe>=12.0.0
+python-dotenv>=1.0.0

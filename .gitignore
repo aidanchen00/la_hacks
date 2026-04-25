@@ -1,0 +1,16 @@
+.env
+.env.local
+careflow.db
+careflow.db-shm
+careflow.db-wal
+web/node_modules/
+web/livekit/node_modules/
+web/.next/
+web/public/generated/
+__pycache__/
+*.pyc
+*.pyo
+.venv/
+venv/
+dist/
+*.egg-info/
