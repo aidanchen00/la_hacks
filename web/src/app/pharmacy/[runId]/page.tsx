@@ -79,16 +79,16 @@ export default function PharmacyPage() {
 
   return (
     <div className="min-h-screen bg-[#F4F1EA]">
-      <div className="px-6 py-8 max-w-5xl mx-auto">
+      <div className="px-4 sm:px-6 py-6 sm:py-8 max-w-5xl mx-auto">
         {/* Header */}
-        <div className="flex items-center gap-4 mb-6">
+        <div className="flex flex-wrap items-center gap-3 mb-6">
           <a
             href={`/dashboard?run_id=${runId}`}
-            className="text-[#1F3A2E] text-sm font-medium hover:opacity-70 transition-opacity"
+            className="text-[#1F3A2E] text-sm font-medium hover:opacity-70 transition-opacity min-h-[44px] flex items-center"
           >
             ← Dashboard
           </a>
-          <h1 className="font-serif text-[#1F3A2E] text-2xl font-medium">
+          <h1 className="font-serif text-[#1F3A2E] text-xl sm:text-2xl font-medium">
             Pharmacy & Wellness Products
           </h1>
         </div>
@@ -122,7 +122,8 @@ export default function PharmacyPage() {
                 value={query}
                 onChange={(e) => setQuery(e.target.value)}
                 disabled={requiresDoctorApproval}
-                className="w-full bg-[#F4F1EA] border border-[#1F3A2E]/20 rounded-xl px-4 py-3 text-[#3D3D3D] text-sm focus:outline-none focus:border-[#1F3A2E]/50 disabled:opacity-50"
+                className="w-full bg-[#F4F1EA] border border-[#1F3A2E]/20 rounded-xl px-4 py-3 text-[#3D3D3D] focus:outline-none focus:border-[#1F3A2E]/50 disabled:opacity-50"
+              style={{ fontSize: 16 }}
               />
             </div>
 
@@ -131,7 +132,7 @@ export default function PharmacyPage() {
               disabled={loading || requiresDoctorApproval}
               whileHover={{ scale: 1.01 }}
               whileTap={{ scale: 0.99 }}
-              className="w-full bg-[#1F3A2E] text-white py-3.5 rounded-full font-medium text-sm hover:bg-[#2A4D3D] transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+              className="w-full bg-[#1F3A2E] text-white rounded-full font-medium text-sm hover:bg-[#2A4D3D] transition-colors disabled:opacity-40 disabled:cursor-not-allowed min-h-[52px]"
             >
               {requiresDoctorApproval
                 ? "Requires Doctor Approval"
@@ -145,7 +146,7 @@ export default function PharmacyPage() {
             <p className="text-[#6B7280] text-sm mb-4">
               Searching for <strong className="text-[#3D3D3D]">{query}</strong> across pharmacies
             </p>
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+            <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-4">
               {sessions.map((s) => (
                 <div
                   key={s.agent}

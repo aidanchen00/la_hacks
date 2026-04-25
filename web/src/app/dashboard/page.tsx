@@ -76,7 +76,7 @@ function RouteCard({
       onClick={onClick}
       whileHover={{ scale: 1.01 }}
       whileTap={{ scale: 0.99 }}
-      className="w-full text-left bg-[#EFEAE0] rounded-2xl p-5 border transition-colors"
+      className="w-full text-left bg-[#EFEAE0] rounded-2xl p-5 border transition-colors min-h-[88px]"
       style={{
         borderColor: recommended ? "rgba(31,58,46,0.4)" : "rgba(31,58,46,0.1)",
         borderWidth: recommended ? 2 : 1,
@@ -146,16 +146,22 @@ function DashboardContent() {
     <div className="min-h-screen bg-[#F4F1EA]">
       {/* Emergency banner */}
       {rd?.urgency === "emergency" && (
-        <div className="bg-[#DC2626] text-white py-4 px-6 text-center">
-          <div className="max-w-2xl mx-auto flex items-center justify-center gap-2">
+        <div className="bg-[#DC2626] text-white py-4 px-4 sm:px-6 text-center">
+          <div className="max-w-2xl mx-auto flex items-center justify-center gap-2 mb-2">
             <AlertCircle className="w-5 h-5" />
             <span className="font-bold uppercase tracking-wide">Medical Emergency</span>
           </div>
-          <p className="text-sm mt-1">Call 911 or go to the nearest emergency room immediately</p>
+          <p className="text-sm mb-3">Call 911 or go to the nearest emergency room immediately</p>
+          <a
+            href="tel:911"
+            className="inline-flex items-center justify-center bg-white text-[#DC2626] font-bold rounded-full px-8 min-h-[52px] text-base hover:bg-red-50 transition-colors"
+          >
+            Call 911 Now
+          </a>
         </div>
       )}
 
-      <div className="px-6 py-8 max-w-2xl mx-auto">
+      <div className="px-4 sm:px-6 py-6 sm:py-8 max-w-2xl mx-auto">
         {/* Header */}
         <div className="flex items-center gap-4 mb-8">
           <a href="/" className="text-[#1F3A2E] text-sm font-medium hover:opacity-70 transition-opacity">
@@ -204,7 +210,7 @@ function DashboardContent() {
                 </div>
               )}
 
-              <h1 className="font-serif text-[#1F3A2E] text-[36px] leading-[1.3] font-medium mt-4 mb-4">
+              <h1 className="font-serif text-[#1F3A2E] text-2xl sm:text-[36px] leading-[1.3] font-medium mt-4 mb-4">
                 {rd?.summary ?? (run?.intake_summary ? "Your care plan is ready." : "Your intake is being processed…")}
               </h1>
 
@@ -248,7 +254,7 @@ function DashboardContent() {
               <h2 className="font-serif text-[#1F3A2E] text-2xl font-medium mb-4">
                 Choose your care path
               </h2>
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 sm:gap-4">
                 {(["doctor", "pharmacy", "mental_health", "alt_medicine"] as const).map((path) => (
                   <RouteCard
                     key={path}
@@ -314,18 +320,21 @@ function DashboardContent() {
       </div>
 
       {/* Persistent bottom bar */}
-      <div className="fixed bottom-0 left-0 right-0 bg-[#F4F1EA] border-t border-[#1F3A2E]/10 px-6 py-4 shadow-lg">
+      <div
+        className="fixed bottom-0 left-0 right-0 bg-[#F4F1EA] border-t border-[#1F3A2E]/10 px-4 sm:px-6 pt-3 shadow-lg"
+        style={{ paddingBottom: "max(1rem, env(safe-area-inset-bottom, 1rem))" }}
+      >
         <div className="max-w-2xl mx-auto flex gap-3">
           <button
             onClick={() => router.push("/")}
-            className="flex-1 flex items-center justify-center gap-2 bg-transparent border-2 border-[#1F3A2E] text-[#1F3A2E] py-3 px-5 rounded-full font-medium text-sm hover:bg-[#1F3A2E]/5 transition-colors"
+            className="flex-1 flex items-center justify-center gap-2 bg-transparent border-2 border-[#1F3A2E] text-[#1F3A2E] py-3 px-5 rounded-full font-medium text-sm hover:bg-[#1F3A2E]/5 transition-colors min-h-[48px]"
           >
             <Plus className="w-4 h-4" />
             <span>New conversation</span>
           </button>
           <button
             onClick={() => router.push("/?history=true")}
-            className="flex-1 flex items-center justify-center gap-2 bg-[#1F3A2E] text-white py-3 px-5 rounded-full font-medium text-sm hover:bg-[#2A4D3D] transition-colors"
+            className="flex-1 flex items-center justify-center gap-2 bg-[#1F3A2E] text-white py-3 px-5 rounded-full font-medium text-sm hover:bg-[#2A4D3D] transition-colors min-h-[48px]"
           >
             <Bookmark className="w-4 h-4" />
             <span>View history</span>

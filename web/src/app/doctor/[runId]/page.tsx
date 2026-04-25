@@ -94,16 +94,16 @@ export default function DoctorPage() {
 
   return (
     <div className="min-h-screen bg-[#F4F1EA]">
-      <div className="px-6 py-8 max-w-5xl mx-auto">
+      <div className="px-4 sm:px-6 py-6 sm:py-8 max-w-5xl mx-auto">
         {/* Header */}
-        <div className="flex items-center gap-4 mb-6">
+        <div className="flex flex-wrap items-center gap-3 mb-6">
           <button
             onClick={() => router.push(`/dashboard?run_id=${runId}`)}
-            className="text-[#1F3A2E] text-sm font-medium hover:opacity-70 transition-opacity"
+            className="text-[#1F3A2E] text-sm font-medium hover:opacity-70 transition-opacity min-h-[44px] flex items-center"
           >
             ← Dashboard
           </button>
-          <h1 className="font-serif text-[#1F3A2E] text-2xl font-medium">
+          <h1 className="font-serif text-[#1F3A2E] text-xl sm:text-2xl font-medium">
             Doctor Appointment Search
           </h1>
         </div>
@@ -129,7 +129,8 @@ export default function DoctorPage() {
                 <input
                   value={specialty}
                   onChange={(e) => setSpecialty(e.target.value)}
-                  className="w-full bg-[#F4F1EA] border border-[#1F3A2E]/20 rounded-xl px-4 py-3 text-[#3D3D3D] text-sm focus:outline-none focus:border-[#1F3A2E]/50"
+                  className="w-full bg-[#F4F1EA] border border-[#1F3A2E]/20 rounded-xl px-4 py-3 text-[#3D3D3D] focus:outline-none focus:border-[#1F3A2E]/50"
+                  style={{ fontSize: 16 }}
                 />
               </div>
               <div>
@@ -137,7 +138,8 @@ export default function DoctorPage() {
                 <input
                   value={location}
                   onChange={(e) => setLocation(e.target.value)}
-                  className="w-full bg-[#F4F1EA] border border-[#1F3A2E]/20 rounded-xl px-4 py-3 text-[#3D3D3D] text-sm focus:outline-none focus:border-[#1F3A2E]/50"
+                  className="w-full bg-[#F4F1EA] border border-[#1F3A2E]/20 rounded-xl px-4 py-3 text-[#3D3D3D] focus:outline-none focus:border-[#1F3A2E]/50"
+                  style={{ fontSize: 16 }}
                 />
               </div>
             </div>
@@ -147,7 +149,7 @@ export default function DoctorPage() {
               disabled={loading}
               whileHover={{ scale: 1.01 }}
               whileTap={{ scale: 0.99 }}
-              className="w-full bg-[#1F3A2E] text-white py-3.5 rounded-full font-medium text-sm hover:bg-[#2A4D3D] transition-colors disabled:opacity-40"
+              className="w-full bg-[#1F3A2E] text-white rounded-full font-medium text-sm hover:bg-[#2A4D3D] transition-colors disabled:opacity-40 min-h-[52px]"
             >
               {loading ? "Launching agents…" : "Launch Search Agents (×3)"}
             </motion.button>
@@ -159,7 +161,7 @@ export default function DoctorPage() {
               · Searching for <strong className="text-[#3D3D3D]">{specialty}</strong> in{" "}
               <strong className="text-[#3D3D3D]">{location}</strong>
             </p>
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+            <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-4">
               {sessions.map((s) => (
                 <div
                   key={s.agent}

@@ -90,17 +90,17 @@ function RecentSessions({ onClose }: { onClose: () => void }) {
       animate={{ opacity: 1, y: 0 }}
       className="flex flex-col h-full bg-[#F4F1EA]"
     >
-      <div className="px-6 pt-6 pb-4 flex items-center gap-3">
+      <div className="px-4 sm:px-6 pt-6 pb-4 flex items-center gap-3">
         <button
           onClick={onClose}
-          className="text-[#1F3A2E] text-sm font-medium hover:opacity-70 transition-opacity"
+          className="text-[#1F3A2E] text-sm font-medium hover:opacity-70 transition-opacity min-h-[44px] flex items-center"
         >
           ← Back
         </button>
         <h2 className="font-serif text-[#1F3A2E] text-xl font-medium">Your History</h2>
       </div>
 
-      <div className="flex-1 overflow-y-auto px-6 pb-8">
+      <div className="flex-1 overflow-y-auto px-4 sm:px-6 pb-8">
         {runs.length === 0 ? (
           <div className="flex flex-col items-center justify-center py-16 text-center">
             <p className="text-[#6B7280] text-base">No sessions yet.</p>
@@ -117,7 +117,7 @@ function RecentSessions({ onClose }: { onClose: () => void }) {
                 <button
                   key={run.id}
                   onClick={() => router.push(`/dashboard?run_id=${run.id}`)}
-                  className="w-full text-left bg-[#EFEAE0] rounded-2xl p-4 border border-[#1F3A2E]/10 hover:border-[#1F3A2E]/30 transition-colors"
+                  className="w-full text-left bg-[#EFEAE0] rounded-2xl p-4 border border-[#1F3A2E]/10 hover:border-[#1F3A2E]/30 transition-colors min-h-[72px]"
                 >
                   <div className="flex items-start justify-between gap-3">
                     <p className="text-[#3D3D3D] text-sm leading-relaxed flex-1 line-clamp-2">
@@ -180,10 +180,10 @@ function RoomView({ onIntakeComplete, t }: { onIntakeComplete: (data: IntakeData
   const isSpeaking = agent.state === "speaking";
 
   return (
-    <div className="flex flex-col h-full bg-[#F4F1EA] items-center justify-center px-6 py-8">
+    <div className="flex flex-col h-full bg-[#F4F1EA] items-center justify-center px-4 sm:px-6 py-6 sm:py-8">
 
       {/* Status label */}
-      <div className="flex items-center gap-2 mb-8">
+      <div className="flex items-center gap-2 mb-4 sm:mb-8">
         <motion.div
           className="w-1.5 h-1.5 rounded-full"
           style={{ backgroundColor: isListening ? "#1F3A2E" : isSpeaking ? "#D97706" : "#6B7280" }}
@@ -195,9 +195,9 @@ function RoomView({ onIntakeComplete, t }: { onIntakeComplete: (data: IntakeData
         </span>
       </div>
 
-      {/* Orb with BarVisualizer */}
+      {/* Orb with BarVisualizer — smaller on mobile */}
       <motion.div
-        className="relative w-72 h-72"
+        className="relative w-56 h-56 sm:w-72 sm:h-72"
         animate={{ scale: isListening ? 1.18 : 1 }}
         transition={{ duration: 0.4, ease: "easeInOut" }}
       >
@@ -213,7 +213,7 @@ function RoomView({ onIntakeComplete, t }: { onIntakeComplete: (data: IntakeData
         />
         {/* Main orb */}
         <motion.div
-          className="absolute inset-12 rounded-full flex items-center justify-center overflow-hidden shadow-2xl"
+          className="absolute inset-8 sm:inset-12 rounded-full flex items-center justify-center overflow-hidden shadow-2xl"
           style={{ background: "radial-gradient(circle at 40% 40%, #2A4D3D, #1F3A2E)" }}
           animate={{ opacity: [0.9, 1, 0.9] }}
           transition={{ duration: 3, repeat: Infinity, ease: "easeInOut" }}
@@ -227,7 +227,7 @@ function RoomView({ onIntakeComplete, t }: { onIntakeComplete: (data: IntakeData
         </motion.div>
         {/* Inner glow */}
         <motion.div
-          className="absolute inset-16 rounded-full pointer-events-none blur-2xl"
+          className="absolute inset-12 sm:inset-16 rounded-full pointer-events-none blur-2xl"
           style={{ backgroundColor: "rgba(42,77,61,0.40)" }}
           animate={{ opacity: isListening ? [0.7, 1, 0.7] : [0.5, 0.8, 0.5] }}
           transition={{ duration: isListening ? 1.2 : 3, repeat: Infinity, ease: "easeInOut" }}
@@ -235,11 +235,11 @@ function RoomView({ onIntakeComplete, t }: { onIntakeComplete: (data: IntakeData
       </motion.div>
 
       {/* Transcript + controls */}
-      <div className="mt-10 w-full max-w-md space-y-4">
+      <div className="mt-6 sm:mt-10 w-full max-w-md space-y-4">
         <motion.div
           initial={{ opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}
-          className="bg-[#EFEAE0] rounded-3xl p-6"
+          className="bg-[#EFEAE0] rounded-3xl p-5 sm:p-6"
         >
           <p className="text-[#3D3D3D] text-base leading-relaxed min-h-[60px]">
             {liveTranscript || (
@@ -257,17 +257,17 @@ function RoomView({ onIntakeComplete, t }: { onIntakeComplete: (data: IntakeData
           <TrackToggle
             source={Track.Source.Microphone}
             style={{
-              padding: "10px 22px", borderRadius: "9999px",
+              padding: "12px 22px", borderRadius: "9999px",
               background: "rgba(31,58,46,0.08)", color: "#1F3A2E",
-              fontSize: 13, cursor: "pointer", border: "1px solid rgba(31,58,46,0.2)",
-              fontFamily: "inherit",
+              fontSize: 14, cursor: "pointer", border: "1px solid rgba(31,58,46,0.2)",
+              fontFamily: "inherit", minHeight: 44,
             }}
           />
           <DisconnectButton style={{
-            padding: "10px 22px", borderRadius: "9999px",
+            padding: "12px 22px", borderRadius: "9999px",
             background: "rgba(220,38,38,0.08)", color: "#DC2626",
-            fontSize: 13, cursor: "pointer", border: "1px solid rgba(220,38,38,0.2)",
-            fontFamily: "inherit",
+            fontSize: 14, cursor: "pointer", border: "1px solid rgba(220,38,38,0.2)",
+            fontFamily: "inherit", minHeight: 44,
           }}>
             {t.endSession}
           </DisconnectButton>
@@ -317,7 +317,7 @@ function TextChatView({
       }
     } catch { /* ignore */ }
     finally { setThinking(false); }
-  }, [language]); // onIntakeComplete accessed via ref — won't re-create callApi
+  }, [language]);
 
   // Greeting fires exactly once on mount
   // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -337,13 +337,13 @@ function TextChatView({
   };
 
   return (
-    <div className="flex flex-col h-full bg-[#F4F1EA] px-6 py-8">
+    <div className="flex flex-col h-full bg-[#F4F1EA] px-4 sm:px-6 py-6 sm:py-8">
       {/* Chat area */}
       <div className="w-full max-w-md mx-auto flex flex-col gap-3 flex-1 min-h-0">
         <div className="flex-1 overflow-y-auto space-y-3 pr-1">
           {messages.map((msg, i) => (
             <div key={i} className={`flex ${msg.role === "user" ? "justify-end" : "justify-start"}`}>
-              <div className={`rounded-2xl px-4 py-3 text-sm leading-relaxed max-w-[85%] ${
+              <div className={`rounded-2xl px-4 py-3 text-base leading-relaxed max-w-[85%] ${
                 msg.role === "user"
                   ? "bg-[#1F3A2E] text-white"
                   : "bg-[#EFEAE0] text-[#3D3D3D]"
@@ -356,7 +356,7 @@ function TextChatView({
             <div className="flex justify-start">
               <div className="bg-[#EFEAE0] rounded-2xl px-4 py-3">
                 <motion.span
-                  className="text-[#6B7280] text-sm"
+                  className="text-[#6B7280] text-base"
                   animate={{ opacity: [0.4, 1, 0.4] }}
                   transition={{ duration: 1, repeat: Infinity }}
                 >
@@ -385,13 +385,14 @@ function TextChatView({
               }
             }}
             placeholder={t.typePlaceholder}
-            className="flex-1 bg-[#EFEAE0] rounded-2xl px-4 py-3 text-sm text-[#3D3D3D] outline-none border border-[#1F3A2E]/10 focus:border-[#1F3A2E]/30 transition-colors resize-none overflow-hidden max-h-40"
-            style={{ lineHeight: "1.5" }}
+            className="flex-1 bg-[#EFEAE0] rounded-2xl px-4 py-3 text-[#3D3D3D] outline-none border border-[#1F3A2E]/10 focus:border-[#1F3A2E]/30 transition-colors resize-none overflow-hidden max-h-40"
+            style={{ lineHeight: "1.5", fontSize: 16 }}
           />
           <button
             onClick={handleSend}
             disabled={!input.trim() || thinking}
-            className="bg-[#1F3A2E] text-white rounded-full px-5 py-3 text-sm font-medium hover:bg-[#2A4D3D] transition-colors disabled:opacity-40 shrink-0"
+            className="bg-[#1F3A2E] text-white rounded-full px-5 font-medium hover:bg-[#2A4D3D] transition-colors disabled:opacity-40 shrink-0 min-h-[48px]"
+            style={{ fontSize: 15 }}
           >
             {t.send}
           </button>
@@ -510,11 +511,12 @@ function VoiceIntake({ onShowHistory, language, onLanguageChange }: {
       <div className="flex flex-col min-h-screen bg-[#F4F1EA]">
 
         {/* Top bar */}
-        <nav className="flex items-center justify-end px-6 pt-5 pb-3 md:px-10 md:pt-6">
+        <nav className="flex items-center justify-end px-4 sm:px-6 md:px-10 pt-5 pb-3">
           <div className="flex items-center gap-2">
             <button
               onClick={onShowHistory}
-              className="flex items-center gap-1.5 px-3 py-2 rounded-full border border-[#1F3A2E]/20 text-[#3D3D3D] text-sm hover:border-[#1F3A2E]/40 transition-colors"
+              aria-label="View history"
+              className="flex items-center gap-1.5 px-3 py-2.5 rounded-full border border-[#1F3A2E]/20 text-[#3D3D3D] text-sm hover:border-[#1F3A2E]/40 transition-colors min-h-[44px]"
             >
               <Clock className="w-3.5 h-3.5" />
               <span className="hidden sm:inline">{t.history}</span>
@@ -524,7 +526,8 @@ function VoiceIntake({ onShowHistory, language, onLanguageChange }: {
             <div className="relative">
               <button
                 onClick={() => setLangOpen((o) => !o)}
-                className="flex items-center gap-1 px-3 py-2 rounded-full border border-[#1F3A2E]/20 text-[#3D3D3D] text-sm hover:border-[#1F3A2E]/40 transition-colors"
+                aria-label="Select language"
+                className="flex items-center gap-1 px-3 py-2.5 rounded-full border border-[#1F3A2E]/20 text-[#3D3D3D] text-sm hover:border-[#1F3A2E]/40 transition-colors min-h-[44px]"
               >
                 <Globe className="w-3.5 h-3.5" />
                 <span>{LANG_LABELS[language]}</span>
@@ -538,7 +541,7 @@ function VoiceIntake({ onShowHistory, language, onLanguageChange }: {
                     <button
                       key={l}
                       onClick={() => { onLanguageChange(l); setLangOpen(false); }}
-                      className={`w-full text-left px-4 py-2 text-sm transition-colors hover:bg-[#F4F1EA] ${language === l ? "text-[#1F3A2E] font-semibold" : "text-[#3D3D3D]"}`}
+                      className={`w-full text-left px-4 py-3 text-sm transition-colors hover:bg-[#F4F1EA] min-h-[44px] flex items-center ${language === l ? "text-[#1F3A2E] font-semibold" : "text-[#3D3D3D]"}`}
                     >
                       {LANG_LABELS[l]}
                     </button>
@@ -547,59 +550,65 @@ function VoiceIntake({ onShowHistory, language, onLanguageChange }: {
               )}
             </div>
 
-            <button className="flex items-center gap-1.5 p-2 rounded-full border border-[#1F3A2E]/20 text-[#3D3D3D] hover:border-[#1F3A2E]/40 transition-colors">
+            <button
+              aria-label="Settings"
+              className="flex items-center gap-1.5 p-2.5 rounded-full border border-[#1F3A2E]/20 text-[#3D3D3D] hover:border-[#1F3A2E]/40 transition-colors min-h-[44px]"
+            >
               <Settings className="w-4 h-4" />
             </button>
           </div>
         </nav>
 
         {/* Main content — Prana centered */}
-        <div className="flex-1 flex flex-col items-center justify-center px-6 py-8">
+        <div className="flex-1 flex flex-col items-center justify-center px-4 sm:px-6 py-6 sm:py-8">
           <motion.div
             initial={{ opacity: 0, y: 20 }}
             animate={{ opacity: 1, y: 0 }}
             transition={{ duration: 0.6 }}
             className="text-center space-y-6 w-full max-w-sm md:max-w-lg"
           >
-            <span className="font-serif text-[#1F3A2E] text-7xl md:text-8xl font-medium tracking-tight">
+            <span className="font-serif text-[#1F3A2E] text-6xl sm:text-7xl md:text-8xl font-medium tracking-tight">
               Prana
             </span>
             <div className="flex justify-center">
               <div className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-[#7BA8A3]/15">
                 <Check className="w-3.5 h-3.5 text-[#7BA8A3]" />
-                <span className="text-xs text-[#3D3D3D]">{t.tagline}</span>
+                <span className="text-xs sm:text-sm text-[#3D3D3D]">{t.tagline}</span>
               </div>
             </div>
           </motion.div>
         </div>
 
         {/* Bottom CTA */}
-        <div className="px-6 pb-10 md:pb-14 w-full">
+        <div
+          className="px-4 sm:px-6 w-full"
+          style={{ paddingBottom: "max(2.5rem, env(safe-area-inset-bottom, 2.5rem))" }}
+        >
           <div className="max-w-sm md:max-w-md mx-auto space-y-3">
             <motion.button
               onClick={() => setStarted(true)}
               whileHover={{ scale: 1.01 }}
               whileTap={{ scale: 0.99 }}
-              className="w-full bg-[#1F3A2E] text-white py-5 rounded-full font-medium text-lg hover:bg-[#2A4D3D] transition-colors"
+              className="w-full bg-[#1F3A2E] text-white rounded-full font-medium text-lg hover:bg-[#2A4D3D] transition-colors min-h-[56px]"
             >
               {t.startTalking}
             </motion.button>
             <div className="flex items-center justify-center gap-4">
               <button
                 onClick={() => { setTextMode(true); setStarted(true); }}
-                className="text-[#3D3D3D] text-sm underline underline-offset-2 hover:text-[#1F3A2E] transition-colors"
+                className="text-[#3D3D3D] text-sm underline underline-offset-2 hover:text-[#1F3A2E] transition-colors py-3 min-h-[44px]"
               >
                 {t.typeSymptoms}
               </button>
               <span className="text-[#6B7280] text-xs">·</span>
               <a
                 href="/dashboard?run_id=demo"
-                className="text-[#6B7280] text-sm hover:text-[#1F3A2E] transition-colors"
+                className="text-[#6B7280] text-sm hover:text-[#1F3A2E] transition-colors py-3 min-h-[44px] inline-flex items-center"
               >
                 {t.previewDemo}
               </a>
             </div>
-            <p className="text-center text-xs text-[#6B7280] px-4 pt-1">{t.disclaimer}</p>
+            <p className="text-center text-xs text-[#6B7280] px-2 pt-1 leading-relaxed">{t.disclaimer}</p>
           </div>
         </div>
 

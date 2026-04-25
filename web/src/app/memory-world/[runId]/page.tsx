@@ -96,7 +96,9 @@ export default function MemoryWorldPage() {
   };
 
   return (
-    <div style={{ minHeight: "100vh", padding: "32px 24px", maxWidth: 900, margin: "0 auto" }}>
+    <div style={{ minHeight: "100vh", padding: "24px 16px", maxWidth: 900, margin: "0 auto" }}
+      className="sm:!px-6 sm:!py-8"
+    >
       <div style={{ display: "flex", alignItems: "center", gap: 16, marginBottom: 28 }}>
         <a href={`/dashboard?run_id=${runId}`} style={{ color: "#64748b", fontSize: 14, textDecoration: "none" }}>← Dashboard</a>
         <h1 style={{ margin: 0, fontSize: 24, fontWeight: 800 }}>🌊 Memory World</h1>
@@ -114,7 +116,7 @@ export default function MemoryWorldPage() {
               value={prompt}
               onChange={(e) => setPrompt(e.target.value)}
               rows={3}
-              style={{ width: "100%", background: "var(--bg)", border: "1px solid var(--border)", borderRadius: 8, padding: "10px 14px", color: "#e2e8f0", fontSize: 14, resize: "vertical" }}
+              style={{ width: "100%", background: "var(--bg)", border: "1px solid var(--border)", borderRadius: 8, padding: "10px 14px", color: "#e2e8f0", fontSize: 16, resize: "vertical" }}
             />
           </div>
 
