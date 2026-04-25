@@ -7,6 +7,7 @@ import {
   type CartItem, type RankerSelectionItem,
 } from "@/lib/api";
 import { motion } from "motion/react";
+import LanguagePicker from "@/app/components/LanguagePicker";
 
 interface SessionInfo {
   agent: string;
@@ -111,13 +112,15 @@ export default function PharmacyPage() {
     return () => { if (browserPollRef.current) clearInterval(browserPollRef.current); };
   }, [started, sessions]);
 
-  // Stop active BrowserUse sessions on unmount or tab close to free quota
+  // Stop active BrowserUse sessions on tab close (NOT on every sessions state update —
+  // that was killing live streams the moment polling updated them).
+  const sessionsRef = useRef<SessionInfo[]>([]);
+  useEffect(() => { sessionsRef.current = sessions; }, [sessions]);
   useEffect(() => {
     const stop = () => {
-      const ids = sessions.map((s) => s.sessionId).filter(Boolean);
+      const ids = sessionsRef.current.map((s) => s.sessionId).filter(Boolean);
       if (!ids.length) return;
       const body = JSON.stringify({ sessionIds: ids });
-      // sendBeacon survives tab close; fall back to fetch otherwise
       if (typeof navigator !== "undefined" && navigator.sendBeacon) {
         navigator.sendBeacon("/api/browser/stop", new Blob([body], { type: "application/json" }));
       } else {
@@ -127,9 +130,10 @@ export default function PharmacyPage() {
     window.addEventListener("beforeunload", stop);
     return () => {
       window.removeEventListener("beforeunload", stop);
+      // Only fire on actual page-unmount (route change), not on every sessions update.
       stop();
     };
-  }, [sessions]);
+  }, []);
 
   const statusDot = (s: SessionInfo) =>
     s.done ? "#16A34A" : s.status === "error" ? "#DC2626" : "#D97706";
@@ -200,7 +204,7 @@ export default function PharmacyPage() {
   const useRankerCheckout = rankerSelected.length > 0;
   const checkoutItemCount = useRankerCheckout ? rankerSelected.length : inStockItems.length;
   const checkoutTotal = useRankerCheckout ? rankerSelectedTotal : cartTotal;
-  const checkoutDisabled = checkoutItemCount === 0 || checkoutLoading || requiresDoctorApproval;
+  const checkoutDisabled = checkoutItemCount === 0 || checkoutLoading;
 
   const handleCheckout = async () => {
     setCheckoutLoading(true);
@@ -240,6 +244,7 @@ export default function PharmacyPage() {
           <h1 className="font-serif text-[#1F3A2E] text-xl sm:text-2xl font-medium">
             Pharmacy & Wellness Products
           </h1>
+          <div className="ml-auto"><LanguagePicker /></div>
         </div>
 
         {/* Payment success banner */}
@@ -279,14 +284,6 @@ export default function PharmacyPage() {
           For educational purposes only. Consult a licensed pharmacist or doctor before purchasing any medication.
         </div>
 
-        {/* Doctor approval warning */}
-        {requiresDoctorApproval && (
-          <div className="bg-[#FEE2E2] border border-[#DC2626]/20 rounded-2xl px-5 py-4 mb-6 text-sm text-[#DC2626]">
-            <strong>Doctor Approval Required</strong> — Your intake indicates prescription-only items may be needed.
-            Please consult a licensed physician before purchasing medications. Ordering is disabled for your safety.
-          </div>
-        )}
-
         {!started ? (
           <motion.div
             initial={{ opacity: 0, y: 20 }}
@@ -302,8 +299,7 @@ export default function PharmacyPage() {
               <input
                 value={query}
                 onChange={(e) => setQuery(e.target.value)}
-                disabled={requiresDoctorApproval}
-                className="w-full bg-[#F4F1EA] border border-[#1F3A2E]/20 rounded-xl px-4 py-3 text-[#3D3D3D] focus:outline-none focus:border-[#1F3A2E]/50 disabled:opacity-50"
+                className="w-full bg-[#F4F1EA] border border-[#1F3A2E]/20 rounded-xl px-4 py-3 text-[#3D3D3D] focus:outline-none focus:border-[#1F3A2E]/50"
                 style={{ fontSize: 16 }}
               />
             </div>
@@ -338,16 +334,14 @@ export default function PharmacyPage() {
 
             <motion.button
               onClick={startSearch}
-              disabled={loading || requiresDoctorApproval}
+              disabled={loading}
               whileHover={{ scale: 1.01 }}
               whileTap={{ scale: 0.99 }}
               className="w-full bg-[#1F3A2E] text-white rounded-full font-medium text-sm hover:bg-[#2A4D3D] transition-colors disabled:opacity-40 disabled:cursor-not-allowed min-h-[52px]"
             >
-              {requiresDoctorApproval
-                ? "Requires Doctor Approval"
-                : loading
-                  ? "Launching agents…"
-                  : `Search CVS · Walgreens · GoodRx ($${totalBudget})`}
+              {loading
+                ? "Launching agents…"
+                : `Search CVS · Walgreens · GoodRx ($${totalBudget})`}
             </motion.button>
           </motion.div>
         ) : (

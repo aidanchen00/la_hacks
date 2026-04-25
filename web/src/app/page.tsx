@@ -80,7 +80,7 @@ function RecentSessions({ onClose }: { onClose: () => void }) {
 
   useEffect(() => {
     listRuns()
-      .then((data) => { if (Array.isArray(data)) setRuns(data.slice(0, 6)); })
+      .then((data) => { if (Array.isArray(data)) setRuns(data); })
       .catch(() => {});
   }, []);
 
@@ -98,6 +98,11 @@ function RecentSessions({ onClose }: { onClose: () => void }) {
           ← Back
         </button>
         <h2 className="font-serif text-[#1F3A2E] text-xl font-medium">Your History</h2>
+        {runs.length > 0 && (
+          <span className="ml-auto text-xs text-[#6B7280]">
+            {runs.length} classified intake{runs.length === 1 ? "" : "s"}
+          </span>
+        )}
       </div>
 
       <div className="flex-1 overflow-y-auto px-4 sm:px-6 pb-8">
@@ -634,6 +639,20 @@ function HomePageInner() {
   const [showHistory, setShowHistory] = useState(params.get("history") === "true");
   const [language, setLanguage] = useState<Lang>("en");
 
+  // Hydrate from shared storage on mount, and persist any changes
+  useEffect(() => {
+    import("@/lib/language").then(({ getLang, subscribeLang }) => {
+      setLanguage(getLang());
+      const unsub = subscribeLang((l) => setLanguage(l));
+      return unsub;
+    });
+  }, []);
+
+  const handleLanguageChange = (l: Lang) => {
+    setLanguage(l);
+    import("@/lib/language").then(({ setLang }) => setLang(l));
+  };
+
   return (
     <main style={{ minHeight: "100vh", display: "flex", flexDirection: "column" }}>
       {showHistory ? (
@@ -642,7 +661,7 @@ function HomePageInner() {
         <VoiceIntake
           key={language}
           language={language}
-          onLanguageChange={setLanguage}
+          onLanguageChange={handleLanguageChange}
           onShowHistory={() => setShowHistory(true)}
         />
       )}

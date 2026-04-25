@@ -58,6 +58,7 @@ budget_agent = Agent(
     mailbox=True,
     publish_agent_details=True,
     readme_path=str(Path(__file__).parent / "README.md"),
+    network="testnet",
 )
 
 logger.info(f"Budget agent address: {budget_agent.address}")

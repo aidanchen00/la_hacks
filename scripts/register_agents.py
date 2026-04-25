@@ -25,12 +25,16 @@ from dotenv import load_dotenv
 load_dotenv(Path(__file__).resolve().parents[1] / ".env")
 
 AGENTS = [
-    {"name": "careflow",    "port": 8100},
-    {"name": "budget",      "port": 8102},
-    {"name": "cvs",         "port": 8103},
-    {"name": "walgreens",   "port": 8104},
-    {"name": "goodrx",      "port": 8105},
-    {"name": "amazon",      "port": 8106},
+    {"name": "careflow",     "port": 8100},
+    {"name": "budget",       "port": 8102},
+    {"name": "cvs",          "port": 8103},
+    {"name": "walgreens",    "port": 8104},
+    {"name": "goodrx",       "port": 8105},
+    {"name": "amazon",       "port": 8106},
+    {"name": "ranker",       "port": 8107},
+    {"name": "zocdoc",       "port": 8108},
+    {"name": "healthgrades", "port": 8109},
+    {"name": "solv",         "port": 8110},
 ]
 
 CONNECT_TIMEOUT   = 120   # seconds to wait for each agent to come up

@@ -111,3 +111,76 @@ class ShoppingResult(Model):
     wallet_spent: float = 0.0
     wallet_remaining: float = 0.0
     error: Optional[str] = None
+
+
+# ---------------------------------------------------------------------------
+# Ranker Agent messages
+# ---------------------------------------------------------------------------
+
+class RankCandidate(Model):
+    """One option discovered by a search agent, fed to the ranker."""
+    source_agent: str        # cvs | walgreens | goodrx | zocdoc | healthgrades | solv ...
+    name: str
+    price: float = 0.0       # 0 if unknown — ranker fills with realistic estimate
+    url: Optional[str] = None
+    description: Optional[str] = None
+    metadata: Dict[str, Any] = {}   # specialty, address, time, accepts_insurance, in_stock, ...
+
+
+class RankRequest(Model):
+    """Caller → Ranker Agent: rank these candidates and pick which to book/buy."""
+    run_id: str
+    domain: str              # "pharmacy" | "doctor"
+    query: str
+    intake_summary: str = ""
+    urgency: str = "wellness"
+    requires_doctor_approval: bool = False
+    total_budget_usd: float = 0.0
+    per_agent_budget_usd: float = 0.0
+    candidates: List[RankCandidate] = []
+    requester_address: Optional[str] = None
+
+
+class RankedItem(Model):
+    """One ranked candidate."""
+    source_agent: str
+    name: str
+    price: float
+    url: Optional[str] = None
+    description: Optional[str] = None
+    metadata: Dict[str, Any] = {}
+    score: float = 0.0       # 0..1
+    rationale: str = ""
+    selected: bool = False
+
+
+class RankerResult(Model):
+    """Ranker Agent → caller: ranked list + selected subset."""
+    run_id: str
+    domain: str
+    ranked_items: List[RankedItem] = []
+    selected_total_usd: float = 0.0
+    selection_rationale: str = ""
+
+
+# ---------------------------------------------------------------------------
+# Doctor appointment search messages (parallel to pharmacy BudgetRequest flow)
+# ---------------------------------------------------------------------------
+
+class AppointmentSearchRequest(Model):
+    """CareFlow → ZocDoc/Healthgrades/Solv: search for providers."""
+    run_id: str
+    query: str            # specialty, e.g. "primary care"
+    location: str         # e.g. "Los Angeles, CA"
+    requester_address: str
+
+
+class AppointmentResult(Model):
+    """ZocDoc/Healthgrades/Solv → CareFlow: parsed provider list."""
+    run_id: str
+    agent_name: str       # zocdoc | healthgrades | solv
+    platform: str         # ZocDoc | Healthgrades | Solv
+    # providers is a list of dicts with: provider, specialty, time, address,
+    # listingUrl, acceptsInsurance — kept as Dict for forward compatibility.
+    providers: List[Dict[str, Any]] = []
+    error: Optional[str] = None

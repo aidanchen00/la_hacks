@@ -105,6 +105,25 @@ def init_db() -> None:
 
         CREATE INDEX IF NOT EXISTS idx_wallets_run ON agent_wallets(run_id);
         CREATE INDEX IF NOT EXISTS idx_cart_run ON shopping_cart(run_id);
+
+        CREATE TABLE IF NOT EXISTS ranker_selections (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            run_id TEXT NOT NULL,
+            domain TEXT NOT NULL,        -- 'pharmacy' | 'doctor'
+            source_agent TEXT NOT NULL,
+            name TEXT NOT NULL,
+            price REAL NOT NULL DEFAULT 0,
+            url TEXT,
+            description TEXT,
+            metadata TEXT NOT NULL DEFAULT '{}',
+            score REAL NOT NULL DEFAULT 0,
+            rationale TEXT,
+            selected INTEGER NOT NULL DEFAULT 0,
+            booked INTEGER NOT NULL DEFAULT 0,
+            stripe_session_id TEXT,
+            created_at TEXT NOT NULL DEFAULT (datetime('now'))
+        );
+        CREATE INDEX IF NOT EXISTS idx_ranker_run ON ranker_selections(run_id, domain);
     """)
     conn.commit()
     conn.close()
@@ -301,6 +320,72 @@ def get_cart_items(run_id: str) -> List[Dict[str, Any]]:
     ).fetchall()
     conn.close()
     return [dict(r) for r in rows]
+
+
+# ---------------------------------------------------------------------------
+# Ranker selections
+# ---------------------------------------------------------------------------
+
+def replace_ranker_selections(run_id: str, domain: str, items: List[Dict[str, Any]]) -> None:
+    """Atomically replace ranker output for a (run_id, domain)."""
+    conn = get_conn()
+    conn.execute("DELETE FROM ranker_selections WHERE run_id = ? AND domain = ?", (run_id, domain))
+    for it in items:
+        conn.execute(
+            """INSERT INTO ranker_selections
+               (run_id, domain, source_agent, name, price, url, description,
+                metadata, score, rationale, selected)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+            (
+                run_id, domain, it.get("source_agent", ""), it.get("name", ""),
+                float(it.get("price", 0) or 0), it.get("url"), it.get("description"),
+                json.dumps(it.get("metadata", {}) or {}),
+                float(it.get("score", 0) or 0), it.get("rationale", ""),
+                int(bool(it.get("selected", False))),
+            ),
+        )
+    conn.commit()
+    conn.close()
+
+
+def get_ranker_selections(run_id: str, domain: Optional[str] = None) -> List[Dict[str, Any]]:
+    conn = get_conn()
+    if domain:
+        rows = conn.execute(
+            "SELECT * FROM ranker_selections WHERE run_id = ? AND domain = ? ORDER BY score DESC, id ASC",
+            (run_id, domain),
+        ).fetchall()
+    else:
+        rows = conn.execute(
+            "SELECT * FROM ranker_selections WHERE run_id = ? ORDER BY score DESC, id ASC",
+            (run_id,),
+        ).fetchall()
+    conn.close()
+    out = []
+    for r in rows:
+        d = dict(r)
+        try:
+            d["metadata"] = json.loads(d.get("metadata") or "{}")
+        except Exception:
+            d["metadata"] = {}
+        d["selected"] = bool(d.get("selected"))
+        d["booked"] = bool(d.get("booked"))
+        out.append(d)
+    return out
+
+
+def mark_selections_booked(run_id: str, domain: str, ids: List[int], stripe_session_id: str) -> None:
+    if not ids:
+        return
+    conn = get_conn()
+    placeholders = ",".join("?" * len(ids))
+    conn.execute(
+        f"""UPDATE ranker_selections SET booked = 1, stripe_session_id = ?
+            WHERE run_id = ? AND domain = ? AND id IN ({placeholders})""",
+        (stripe_session_id, run_id, domain, *ids),
+    )
+    conn.commit()
+    conn.close()
 
 
 def get_agent_events(run_id: str, since: int = 0) -> List[Dict[str, Any]]:

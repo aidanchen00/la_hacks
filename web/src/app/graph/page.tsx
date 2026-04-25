@@ -1,7 +1,9 @@
 "use client";
 
-import { useEffect, useState, useRef, useMemo } from "react";
+import { useEffect, useState, useRef, useMemo, useCallback } from "react";
 import { useRouter } from "next/navigation";
+import { listRuns } from "@/lib/api";
+import LanguagePicker from "@/app/components/LanguagePicker";
 import dynamic from "next/dynamic";
 import { motion, AnimatePresence } from "motion/react";
 import type { GraphData, GraphNode } from "@/app/components/ForceGraph3D";
@@ -48,6 +50,15 @@ const TYPE_DESCRIPTIONS: Record<string, string> = {
 
 export default function GraphPage() {
   const router = useRouter();
+  const goToDashboard = useCallback(async () => {
+    try {
+      const runs = await listRuns();
+      const latest = Array.isArray(runs) && runs.length > 0 ? runs[0] : null;
+      router.push(latest ? `/dashboard?run_id=${latest.id}` : "/dashboard?run_id=demo");
+    } catch {
+      router.push("/dashboard?run_id=demo");
+    }
+  }, [router]);
   const [graphData, setGraphData] = useState<GraphData | null>(null);
   const [focusId, setFocusId] = useState<string | null>(null);
   const [selected, setSelected] = useState<GraphNode | null>(null);
@@ -101,29 +112,32 @@ export default function GraphPage() {
       <div className="px-4 sm:px-6 py-6 sm:py-8 max-w-7xl mx-auto">
         {/* Header */}
         <div className="flex flex-wrap items-center gap-3 mb-5">
-          <a
-            href="/dashboard"
-            className="text-[#1F3A2E] text-sm font-medium hover:opacity-70 transition-opacity min-h-[44px] flex items-center"
+          <button
+            onClick={goToDashboard}
+            className="text-[#1F3A2E] text-sm font-medium hover:opacity-70 transition-opacity min-h-[44px] flex items-center bg-transparent border-0 cursor-pointer p-0"
           >
             ← Dashboard
-          </a>
+          </button>
           <h1 className="font-serif text-[#1F3A2E] text-xl sm:text-2xl font-medium">
             Knowledge Graph
           </h1>
 
-          <div className="ml-auto hidden md:flex flex-wrap gap-x-4 gap-y-2">
-            {Object.entries(TYPE_COLORS).map(([type, color]) => (
-              <div
-                key={type}
-                className="flex items-center gap-2 text-xs text-[#6B7280] uppercase tracking-wider font-medium"
-              >
-                <span
-                  className="w-2.5 h-2.5 rounded-full inline-block"
-                  style={{ backgroundColor: color, boxShadow: `0 0 8px ${color}80` }}
-                />
-                {type}
-              </div>
-            ))}
+          <div className="ml-auto flex items-center gap-3">
+            <div className="hidden md:flex flex-wrap gap-x-4 gap-y-2">
+              {Object.entries(TYPE_COLORS).map(([type, color]) => (
+                <div
+                  key={type}
+                  className="flex items-center gap-2 text-xs text-[#6B7280] uppercase tracking-wider font-medium"
+                >
+                  <span
+                    className="w-2.5 h-2.5 rounded-full inline-block"
+                    style={{ backgroundColor: color, boxShadow: `0 0 8px ${color}80` }}
+                  />
+                  {type}
+                </div>
+              ))}
+            </div>
+            <LanguagePicker />
           </div>
         </div>
 

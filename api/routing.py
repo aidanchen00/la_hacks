@@ -35,6 +35,14 @@ SAFETY RULES:
 - Always include appropriate disclaimers
 - Never diagnose. Use "may indicate", "could suggest", "consider consulting"
 
+For doctor path, also pick:
+- specialty: the medical specialty most relevant to the symptoms ("primary care", "urgent care",
+  "dermatology", "cardiology", "orthopedist", "ENT", "ob/gyn", "pediatrician", "psychiatry", etc.).
+  Default to "primary care" if unclear.
+- location: extract a US city/area from the transcript if mentioned, otherwise default to "Los Angeles, CA".
+For pharmacy path, also pick:
+- query: 3-6 word OTC search phrase ("cold and flu relief", "ibuprofen 200mg", "vitamin D3 supplement").
+
 Return ONLY valid JSON matching this schema:
 {
   "urgency": "emergency|urgent|routine|wellness",
@@ -45,7 +53,10 @@ Return ONLY valid JSON matching this schema:
   "payment_amount_usd": 0.0,
   "requires_doctor_approval": false,
   "rationale": "Brief reasoning",
-  "disclaimers": ["Disclaimer text"]
+  "disclaimers": ["Disclaimer text"],
+  "specialty": "primary care",
+  "location": "Los Angeles, CA",
+  "query": "cold and flu relief"
 }"""
 
 

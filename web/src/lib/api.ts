@@ -120,3 +120,75 @@ export function createBudgetCheckout(runId: string, items: CheckoutItem[]): Prom
     body: JSON.stringify({ run_id: runId, items }),
   });
 }
+
+// ---------------------------------------------------------------------------
+// Ranker
+// ---------------------------------------------------------------------------
+
+export interface RankerCandidate {
+  source_agent: string;
+  name: string;
+  price?: number;
+  url?: string | null;
+  description?: string | null;
+  metadata?: Record<string, unknown>;
+}
+
+export interface RankerSelectionItem {
+  id?: number;
+  run_id?: string;
+  domain: string;
+  source_agent: string;
+  name: string;
+  price: number;
+  url: string | null;
+  description: string | null;
+  metadata: Record<string, unknown>;
+  score: number;
+  rationale: string;
+  selected: boolean;
+  booked?: boolean;
+  stripe_session_id?: string | null;
+}
+
+export interface RankerStatus {
+  run_id: string;
+  domain: string | null;
+  items: RankerSelectionItem[];
+  selected: RankerSelectionItem[];
+  selected_total_usd: number;
+}
+
+export interface RankRequestBody {
+  domain: "pharmacy" | "doctor";
+  query: string;
+  intake_summary?: string;
+  urgency?: string;
+  requires_doctor_approval?: boolean;
+  total_budget_usd?: number;
+  per_agent_budget_usd?: number;
+  candidates: RankerCandidate[];
+}
+
+export function runRanker(runId: string, body: RankRequestBody): Promise<unknown> {
+  return request(`/rank/${runId}`, { method: "POST", body: JSON.stringify(body) });
+}
+
+export function getRanker(runId: string, domain: "pharmacy" | "doctor"): Promise<RankerStatus> {
+  return request(`/rank/${runId}?domain=${domain}`);
+}
+
+export interface DoctorCheckoutItem {
+  id?: number;
+  name: string;
+  price: number;
+  source_agent?: string;
+  description?: string | null;
+}
+
+export function createDoctorCheckout(runId: string, items: DoctorCheckoutItem[]): Promise<{ checkout_url: string; session_id: string }> {
+  return request("/doctor/checkout", {
+    method: "POST",
+    body: JSON.stringify({ run_id: runId, items }),
+  });
+}

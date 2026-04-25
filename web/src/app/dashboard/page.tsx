@@ -7,6 +7,7 @@ import { FIXTURE_ROUTING_DECISION } from "@/fixtures";
 import { Suspense } from "react";
 import { motion } from "motion/react";
 import { Plus, Bookmark, Phone, Navigation, AlertCircle } from "lucide-react";
+import LanguagePicker from "@/app/components/LanguagePicker";
 
 const PATH_CONFIG = {
   doctor: {
@@ -177,12 +178,15 @@ function DashboardContent() {
           <a href="/" className="text-[#1F3A2E] text-sm font-medium hover:opacity-70 transition-opacity">
             ← New Intake
           </a>
-          <button
-            onClick={() => router.push("/graph")}
-            className="ml-auto text-sm text-[#6B7280] border border-[#1F3A2E]/20 rounded-full px-4 py-2 hover:border-[#1F3A2E]/40 transition-colors"
-          >
-            Knowledge Graph →
-          </button>
+          <div className="ml-auto flex items-center gap-2">
+            <LanguagePicker />
+            <button
+              onClick={() => router.push("/graph")}
+              className="text-sm text-[#6B7280] border border-[#1F3A2E]/20 rounded-full px-4 py-2 hover:border-[#1F3A2E]/40 transition-colors"
+            >
+              Knowledge Graph →
+            </button>
+          </div>
         </div>
 
         {loading ? (

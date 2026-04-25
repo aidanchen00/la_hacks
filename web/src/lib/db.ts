@@ -247,12 +247,13 @@ export interface RunSummary {
   rd_summary: string | null;
 }
 
-export function getRecentRuns(limit = 20): RunSummary[] {
+export function getRecentRuns(limit = 200): RunSummary[] {
+  // Only return runs that have been classified (have a routing_decision row).
   return getDb().prepare(`
     SELECT r.id, r.status, r.instruction, r.intake_summary, r.created_at,
            rd.urgency, rd.recommended_path, rd.summary AS rd_summary
     FROM runs r
-    LEFT JOIN routing_decisions rd ON rd.run_id = r.id
+    INNER JOIN routing_decisions rd ON rd.run_id = r.id
     ORDER BY r.created_at DESC
     LIMIT ?
   `).all(limit) as RunSummary[];

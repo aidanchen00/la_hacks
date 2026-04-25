@@ -49,7 +49,10 @@ from uagents_core.contrib.protocols.payment import (  # type: ignore
     payment_protocol_spec,
 )
 
-from agents.shared.messages import BudgetRequest, RoutingDecision, SpecialistResult
+from agents.shared.messages import (
+    AppointmentResult, AppointmentSearchRequest,
+    BudgetRequest, RoutingDecision, SpecialistResult,
+)
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(name)s: %(message)s")
 logger = logging.getLogger("careflow-agent")
@@ -95,6 +98,20 @@ logger.info(f"CareFlow agent address: {careflow.address}")
 # In-memory store for ASI:One sender addresses
 _pending_chat: Dict[str, str] = {}     # run_id → sender_address (routing phase)
 _pharmacy_chat: Dict[str, str] = {}   # run_id → sender_address (waiting for shopping results)
+_doctor_chat: Dict[str, str] = {}     # run_id → sender_address (waiting for appointment results)
+_doctor_state: Dict[str, Dict[str, Any]] = {}   # run_id → { expected, decision, results }
+
+
+def _appointment_address(seed: str) -> str:
+    from uagents.crypto import Identity
+    return Identity.from_seed(seed, 0).address
+
+
+APPOINTMENT_AGENTS = {
+    "zocdoc":       _appointment_address("zocdoc-seller-seed-la-hacks-2026"),
+    "healthgrades": _appointment_address("healthgrades-seller-seed-la-hacks-2026"),
+    "solv":         _appointment_address("solv-seller-seed-la-hacks-2026"),
+}
 
 # ---------------------------------------------------------------------------
 # LLM routing (same logic as api/routing.py but runs in-agent)
@@ -112,6 +129,12 @@ Rules:
 - Never diagnose; use "may indicate", "consider consulting"
 - If the user asks about a past intake or says "last time" / "continue" / "what did you say", reference their history directly
 
+For doctor path, also pick:
+- specialty: the medical specialty most relevant ("primary care", "urgent care", "dermatology", "cardiology", "psychiatry", etc.). Default to "primary care" if unclear.
+- location: extract a US city/area from the message/history if mentioned, otherwise "Los Angeles, CA".
+For pharmacy path, also pick:
+- query: 3-6 word OTC search phrase ("cold and flu relief", "ibuprofen 200mg").
+
 Return ONLY valid JSON:
 {
   "urgency": "...",
@@ -122,7 +145,10 @@ Return ONLY valid JSON:
   "payment_amount_usd": 0.0,
   "requires_doctor_approval": false,
   "rationale": "...",
-  "disclaimers": ["CareFlow is a wellness education tool..."]
+  "disclaimers": ["CareFlow is a wellness education tool..."],
+  "specialty": "primary care",
+  "location": "Los Angeles, CA",
+  "query": "cold and flu relief"
 }"""
 
 
@@ -426,6 +452,167 @@ async def _trigger_doctor_payment(run_id: str, urgency: str) -> tuple[Optional[s
     return None, item_name, amount
 
 
+async def _trigger_doctor_search(ctx: Context, run_id: str, decision: Dict[str, Any]) -> None:
+    """Fan out AppointmentSearchRequest to ZocDoc / Healthgrades / Solv."""
+    specialty = (decision.get("specialty") or "primary care").strip()
+    location = (decision.get("location") or "Los Angeles, CA").strip()
+    _doctor_state[run_id] = {
+        "expected": set(APPOINTMENT_AGENTS.keys()),
+        "results": [],            # list of AppointmentResult
+        "decision": decision,
+        "specialty": specialty,
+        "location": location,
+    }
+    for name, addr in APPOINTMENT_AGENTS.items():
+        req = AppointmentSearchRequest(
+            run_id=run_id, query=specialty, location=location,
+            requester_address=careflow.address,
+        )
+        try:
+            await ctx.send(addr, req)
+            logger.info(f"[doctor] AppointmentSearchRequest → {name} (run {run_id[:8]})")
+        except Exception as e:
+            logger.error(f"[doctor] send to {name} failed: {e}")
+    await _post_event(run_id, "doctor_search_started", {
+        "specialty": specialty, "location": location, "agents": list(APPOINTMENT_AGENTS.keys()),
+    })
+
+
+async def _finalize_doctor_run(ctx: Context, run_id: str) -> None:
+    """All 3 appointment agents reported in — rank, checkout, follow-up chat."""
+    state = _doctor_state.pop(run_id, None)
+    sender = _doctor_chat.pop(run_id, None)
+    if not state or not sender:
+        return
+
+    decision = state["decision"]
+    urgency = decision.get("urgency", "routine")
+    item_name, amount = DOCTOR_COSTS.get(urgency, DOCTOR_COSTS["routine"])
+
+    # Flatten parsed providers into ranker candidates
+    candidates: List[Dict[str, Any]] = []
+    by_site: Dict[str, int] = {}
+    for r in state["results"]:
+        by_site[r.platform] = len(r.providers)
+        for p in r.providers:
+            candidates.append({
+                "source_agent": r.platform,
+                "name": p.get("provider", "Unknown provider"),
+                "price": amount,    # visit fee, same across providers
+                "url": p.get("listingUrl"),
+                "description": (
+                    f"{p.get('specialty', '')} · {p.get('address', '')}".strip(" ·")
+                    if (p.get("specialty") or p.get("address")) else None
+                ),
+                "metadata": {
+                    "specialty": p.get("specialty"),
+                    "time": p.get("time"),
+                    "address": p.get("address"),
+                    "accepts_insurance": p.get("acceptsInsurance"),
+                },
+            })
+
+    summary_lines = [f"🏥 Appointment search complete (run: {run_id[:8]})"]
+    summary_lines.append(
+        " · ".join(f"{site}: {n}" for site, n in by_site.items())
+        or "No providers parsed."
+    )
+
+    checkout_url: Optional[str] = None
+    pick_name: str = ""
+    pick_url: Optional[str] = None
+    pick_time: Optional[str] = None
+
+    if candidates:
+        try:
+            async with httpx.AsyncClient(timeout=45.0) as client:
+                rank_resp = await client.post(
+                    f"{FASTAPI_BASE_URL}/rank/{run_id}",
+                    json={
+                        "domain": "doctor",
+                        "query": state["specialty"],
+                        "intake_summary": decision.get("summary", ""),
+                        "urgency": urgency,
+                        "requires_doctor_approval": False,
+                        "total_budget_usd": amount,
+                        "per_agent_budget_usd": amount,
+                        "candidates": candidates,
+                    },
+                )
+                rank_data = rank_resp.json() if rank_resp.status_code == 200 else {}
+        except Exception as e:
+            logger.error(f"[doctor] ranker call failed: {e}")
+            rank_data = {}
+
+        # Pull persisted selection so we have the row id required by /doctor/checkout
+        selected_items: List[Dict[str, Any]] = []
+        try:
+            async with httpx.AsyncClient(timeout=10.0) as client:
+                sel_resp = await client.get(f"{FASTAPI_BASE_URL}/rank/{run_id}", params={"domain": "doctor"})
+                if sel_resp.status_code == 200:
+                    selected_items = sel_resp.json().get("selected", []) or []
+        except Exception as e:
+            logger.error(f"[doctor] ranker fetch failed: {e}")
+
+        if selected_items:
+            top = selected_items[0]
+            pick_name = top.get("name", "")
+            pick_url = top.get("url")
+            pick_time = (top.get("metadata") or {}).get("time")
+            checkout_payload = {
+                "run_id": run_id,
+                "items": [{
+                    "id": top.get("id"),
+                    "name": top.get("name"),
+                    "price": top.get("price", amount),
+                    "source_agent": top.get("source_agent"),
+                    "description": top.get("description"),
+                }],
+            }
+            try:
+                async with httpx.AsyncClient(timeout=15.0) as client:
+                    co_resp = await client.post(f"{FASTAPI_BASE_URL}/doctor/checkout", json=checkout_payload)
+                    if co_resp.status_code == 200:
+                        checkout_url = co_resp.json().get("checkout_url")
+            except Exception as e:
+                logger.error(f"[doctor] checkout failed: {e}")
+            rationale = (rank_data.get("selection_rationale") or "").strip()
+            summary_lines.append(f"\n🎯 Ranker pick: {pick_name} ({top.get('source_agent', '?')})")
+            if pick_time:
+                summary_lines.append(f"🗓 Earliest: {pick_time}")
+            if rationale:
+                summary_lines.append(f"💭 {rationale}")
+
+    if checkout_url:
+        summary_lines.append(
+            f"\n💳 Book & Pay — {item_name}: ${amount:.2f}\n{checkout_url}\n"
+            f"Test card: 4242 4242 4242 4242 · any future date · any CVV"
+        )
+    else:
+        # Fall back to a generic visit checkout if ranker / persistence failed
+        fallback_url, _, _ = await _trigger_doctor_payment(run_id, urgency)
+        if fallback_url:
+            summary_lines.append(
+                f"\n💳 Book & Pay — {item_name}: ${amount:.2f}\n{fallback_url}\n"
+                f"Test card: 4242 4242 4242 4242 · any future date · any CVV"
+            )
+        else:
+            summary_lines.append(f"\n💳 {item_name}: ${amount:.2f} (payment link unavailable)")
+
+    if pick_url:
+        summary_lines.append(f"🔗 Provider listing: {pick_url}")
+    summary_lines.append(f"📊 Doctor page: {APP_URL}/doctor/{run_id}")
+    summary_lines.append(f"📊 Full dashboard: {APP_URL}/dashboard?run_id={run_id}")
+
+    await ctx.send(sender, ChatMessage(
+        timestamp=datetime.utcnow(), msg_id=uuid4(),
+        content=[
+            TextContent(type="text", text="\n".join(summary_lines)),
+            EndSessionContent(type="end-session"),
+        ],
+    ))
+
+
 @careflow.on_interval(period=3.0)
 async def poll_pending_runs(ctx: Context) -> None:
     run = _get_pending_run()
@@ -515,23 +702,18 @@ async def handle_chat(ctx: Context, sender: str, msg: ChatMessage) -> None:
 
     recommended_path = decision.get("recommended_path", "self_care")
 
-    doctor_checkout_url: Optional[str] = None
-    doctor_item_name: str = ""
-    doctor_amount: float = 0.0
-
+    doctor_searching = False
     try:
         if recommended_path == "pharmacy":
             _pharmacy_chat[run_id] = sender
             await _trigger_budget(ctx, run_id, text, decision)
             logger.info(f"[chat] Budget trigger sent for pharmacy run {run_id[:8]}")
         elif recommended_path == "doctor":
-            doctor_checkout_url, doctor_item_name, doctor_amount = await _trigger_doctor_payment(
-                run_id, decision.get("urgency", "routine")
-            )
-            await _post_event(run_id, "doctor_checkout_ready", {
-                "checkout_url": doctor_checkout_url, "item_name": doctor_item_name, "amount_usd": doctor_amount,
-            })
-            logger.info(f"[chat] Doctor checkout created for run {run_id[:8]}: ${doctor_amount}")
+            _doctor_chat[run_id] = sender
+            await _trigger_doctor_search(ctx, run_id, decision)
+            doctor_searching = True
+            logger.info(f"[chat] Doctor search dispatched for run {run_id[:8]} "
+                        f"(specialty='{decision.get('specialty')}', loc='{decision.get('location')}')")
     except Exception as e:
         logger.error(f"[chat] Downstream trigger failed for run {run_id[:8]}: {e}", exc_info=True)
 
@@ -549,14 +731,13 @@ async def handle_chat(ctx: Context, sender: str, msg: ChatMessage) -> None:
     history_note = "\n📋 Context: Personalized based on your intake history.\n" if user_context else ""
 
     payment_block = ""
-    if recommended_path == "doctor" and doctor_checkout_url:
+    if recommended_path == "doctor":
+        sites = ", ".join(s.title() for s in APPOINTMENT_AGENTS.keys())
         payment_block = (
-            f"\n💳 Book & Pay — {doctor_item_name}: ${doctor_amount:.2f}\n"
-            f"{doctor_checkout_url}\n"
-            f"Test card: 4242 4242 4242 4242 · any future date · any CVV\n"
+            f"\n🔍 Searching {sites} for {decision.get('specialty', 'primary care')} "
+            f"in {decision.get('location', 'Los Angeles, CA')}…\n"
+            f"I'll send the booking link in ~60–90s once the agents return.\n"
         )
-    elif recommended_path == "doctor":
-        payment_block = f"\n💳 {doctor_item_name}: ${doctor_amount:.2f} (payment link unavailable — check dashboard)\n"
 
     result_text = (
         f"🏥 CareFlow Routing Decision (run: {run_id[:8]})\n"
@@ -571,9 +752,9 @@ async def handle_chat(ctx: Context, sender: str, msg: ChatMessage) -> None:
         + "\n".join(decision.get("disclaimers", []))
     )
 
-    # For pharmacy, don't end session — waiting for shopping results
+    # For pharmacy / doctor, don't end session — waiting for async results
     content = [TextContent(type="text", text=result_text)]
-    if recommended_path != "pharmacy":
+    if recommended_path not in ("pharmacy", "doctor"):
         content.append(EndSessionContent(type="end-session"))
 
     await ctx.send(sender, ChatMessage(
@@ -590,6 +771,25 @@ async def handle_ack(_ctx: Context, _sender: str, _msg: ChatAcknowledgement) -> 
 
 
 careflow.include(chat_proto, publish_manifest=True)
+
+
+@careflow.on_message(AppointmentResult)
+async def handle_appointment_result(ctx: Context, sender: str, msg: AppointmentResult) -> None:
+    """Collect ZocDoc/Healthgrades/Solv results; finalize once all 3 returned."""
+    state = _doctor_state.get(msg.run_id)
+    if not state:
+        logger.warning(f"[doctor] AppointmentResult for unknown run {msg.run_id[:8]}")
+        return
+    state["results"].append(msg)
+    state["expected"].discard(msg.agent_name)
+    logger.info(f"[doctor] {msg.agent_name} returned {len(msg.providers)} provider(s) "
+                f"(remaining: {sorted(state['expected'])})")
+    await _post_event(msg.run_id, "appointment_result", {
+        "agent": msg.agent_name, "platform": msg.platform,
+        "count": len(msg.providers), "error": msg.error,
+    })
+    if not state["expected"]:
+        await _finalize_doctor_run(ctx, msg.run_id)
 
 
 @careflow.on_message(SpecialistResult)

@@ -5,6 +5,7 @@ import { useParams } from "next/navigation";
 import { useOdyssey } from "@odysseyml/odyssey/react";
 import { credentialsFromDict } from "@odysseyml/odyssey";
 import { motion } from "motion/react";
+import LanguagePicker from "@/app/components/LanguagePicker";
 
 export default function MemoryWorldPage() {
   const { runId } = useParams<{ runId: string }>();
@@ -130,12 +131,15 @@ export default function MemoryWorldPage() {
             ← Dashboard
           </a>
           <h1 className="font-serif text-[#1F3A2E] text-xl sm:text-2xl font-medium">Memory World</h1>
-          <span
-            className="ml-auto text-xs font-semibold uppercase tracking-wider"
-            style={{ color: statusColor() }}
-          >
-            {statusLabel()}
-          </span>
+          <div className="ml-auto flex items-center gap-3">
+            <span
+              className="text-xs font-semibold uppercase tracking-wider"
+              style={{ color: statusColor() }}
+            >
+              {statusLabel()}
+            </span>
+            <LanguagePicker />
+          </div>
         </div>
 
         <p className="text-[#6B7280] text-sm mb-6 max-w-xl leading-relaxed">

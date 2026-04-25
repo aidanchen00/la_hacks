@@ -11,9 +11,10 @@ function getComposio(): any {
 export async function POST(req: NextRequest) {
   const row = (await req.json()) as Record<string, string>;
   const entityId = process.env.COMPOSIO_USER_ID ?? "default";
-  const sheetsId = process.env.DOMUS_SHEETS_ID ?? "";
+  // Prefer the new PRANA_SHEETS_ID; fall back to the legacy DOMUS_SHEETS_ID.
+  const sheetsId = process.env.PRANA_SHEETS_ID ?? process.env.DOMUS_SHEETS_ID ?? "";
 
-  if (!sheetsId) return NextResponse.json({ saved: false, error: "DOMUS_SHEETS_ID not set" });
+  if (!sheetsId) return NextResponse.json({ saved: false, error: "PRANA_SHEETS_ID (or legacy DOMUS_SHEETS_ID) not set" });
 
   const values = [
     row.run_id ?? "", row.timestamp ?? new Date().toISOString(), row.user_email ?? "",
@@ -27,9 +28,9 @@ export async function POST(req: NextRequest) {
       userId: entityId,
       arguments: {
         spreadsheet_id: sheetsId,
-        ranges: ["CareFlow Intakes!A:J"],
+        ranges: ["Sheet1!A:J"],
         value_input_option: "USER_ENTERED",
-        data: [{ range: "CareFlow Intakes!A:J", values: [values] }],
+        data: [{ range: "Sheet1!A:J", values: [values] }],
       },
       dangerouslySkipVersionCheck: true,
     });

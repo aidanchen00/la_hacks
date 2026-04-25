@@ -45,6 +45,8 @@ from api.db import (
     get_budget_session,
     get_all_wallets,
     get_cart_items,
+    get_ranker_selections,
+    mark_selections_booked,
 )
 from api.routing import route_intake
 
@@ -300,6 +302,9 @@ async def budget_checkout(request: Request):
 
     update_budget_session(run_id, stripe_session_id=session.id, checkout_url=session.url,
                            status="checkout")
+    selection_ids = [int(i["id"]) for i in items if isinstance(i.get("id"), int)]
+    if selection_ids:
+        mark_selections_booked(run_id, "pharmacy", selection_ids, session.id)
     insert_agent_event(run_id, "budget", "checkout_created",
                         {"stripe_session_id": session.id, "checkout_url": session.url,
                          "num_items": len(items)})
@@ -394,6 +399,132 @@ async def budget_browser_stop_all():
 
     _budget_browser_sessions.clear()
     return {"stopped": stopped}
+
+
+# ---------------------------------------------------------------------------
+# Ranker — proxy to ranker uAgent's REST endpoint, with inline fallback
+# ---------------------------------------------------------------------------
+
+RANKER_REST_URL = os.getenv("RANKER_REST_URL", "http://localhost:8107/rank")
+
+
+@app.post("/rank/{run_id}")
+async def run_ranker(run_id: str, request: Request):
+    """Invoke the ranker uAgent. Body: { domain, query, candidates: [...], ... }."""
+    body = await request.json()
+    domain = body.get("domain", "pharmacy")
+    payload = {
+        "run_id": run_id,
+        "domain": domain,
+        "query": body.get("query", ""),
+        "intake_summary": body.get("intake_summary", ""),
+        "urgency": body.get("urgency", "wellness"),
+        "requires_doctor_approval": bool(body.get("requires_doctor_approval", False)),
+        "total_budget_usd": float(body.get("total_budget_usd", 0) or 0),
+        "per_agent_budget_usd": float(body.get("per_agent_budget_usd", 0) or 0),
+        "candidates": body.get("candidates", []) or [],
+    }
+
+    # Try the real uAgent REST endpoint first
+    try:
+        async with httpx.AsyncClient(timeout=30.0) as client:
+            resp = await client.post(RANKER_REST_URL, json=payload)
+            if resp.status_code == 200:
+                logger.info(f"[rank] uAgent ranked run {run_id[:8]} ({domain})")
+                return resp.json()
+            logger.warning(f"[rank] uAgent returned {resp.status_code}, falling back to inline")
+    except Exception as e:
+        logger.warning(f"[rank] uAgent unreachable ({e}), falling back to inline")
+
+    # Inline fallback — same logic as the ranker uAgent (so the UI doesn't block
+    # on the bureau being up). Selections are still persisted to the same table.
+    from agents.ranker.agent import _rank_with_llm, _persist
+    from agents.shared.messages import RankRequest, RankCandidate
+    req = RankRequest(
+        run_id=run_id,
+        domain=payload["domain"],
+        query=payload["query"],
+        intake_summary=payload["intake_summary"],
+        urgency=payload["urgency"],
+        requires_doctor_approval=payload["requires_doctor_approval"],
+        total_budget_usd=payload["total_budget_usd"],
+        per_agent_budget_usd=payload["per_agent_budget_usd"],
+        candidates=[RankCandidate(**c) for c in payload["candidates"]],
+    )
+    result = await _rank_with_llm(req)
+    _persist(result)
+    insert_agent_event(run_id, "ranker", "ranker_selected", {
+        "domain": result.domain,
+        "selected_count": sum(1 for r in result.ranked_items if r.selected),
+        "selected_total_usd": result.selected_total_usd,
+        "rationale": result.selection_rationale,
+        "fallback": "inline",
+    })
+    return json.loads(result.json()) if hasattr(result, "json") else result.dict()
+
+
+@app.get("/rank/{run_id}")
+async def get_ranker(run_id: str, domain: Optional[str] = None):
+    """Return persisted ranker selections (for the sidebar to poll)."""
+    items = get_ranker_selections(run_id, domain)
+    selected = [i for i in items if i["selected"]]
+    return {
+        "run_id": run_id,
+        "domain": domain,
+        "items": items,
+        "selected": selected,
+        "selected_total_usd": round(sum(i["price"] for i in selected), 2),
+    }
+
+
+# ---------------------------------------------------------------------------
+# Doctor appointment Stripe checkout (fee for booking)
+# ---------------------------------------------------------------------------
+
+@app.post("/doctor/checkout")
+async def doctor_checkout(request: Request):
+    """Stripe checkout for a booked doctor appointment (uses ranker-selected items)."""
+    if not STRIPE_SECRET_KEY:
+        raise HTTPException(status_code=500, detail="Stripe not configured")
+    body = await request.json()
+    run_id = body.get("run_id", "")
+    items: list = body.get("items", [])
+    if not items:
+        raise HTTPException(status_code=400, detail="No appointments to book")
+
+    line_items = [
+        {
+            "price_data": {
+                "currency": "usd",
+                "product_data": {
+                    "name": f"Appointment booking — {item.get('name', 'Provider')}",
+                    "description": (item.get("description")
+                                    or f"Booked via {item.get('source_agent', 'CareFlow')}")[:200],
+                },
+                "unit_amount": max(100, int(float(item.get("price", 150)) * 100)),
+            },
+            "quantity": 1,
+        }
+        for item in items
+    ]
+
+    session = stripe.checkout.Session.create(
+        mode="payment",
+        payment_method_types=["card"],
+        line_items=line_items,
+        success_url=f"http://localhost:3000/doctor/{run_id}?payment=success",
+        cancel_url=f"http://localhost:3000/doctor/{run_id}?payment=cancel",
+        metadata={"run_id": run_id, "source": "doctor_ranker"},
+    )
+
+    ids = [int(i["id"]) for i in items if i.get("id") is not None]
+    if ids:
+        mark_selections_booked(run_id, "doctor", ids, session.id)
+    insert_agent_event(run_id, "ranker", "appointment_checkout_created",
+                        {"stripe_session_id": session.id, "checkout_url": session.url,
+                         "num_items": len(items)})
+    logger.info(f"[doctor] Stripe checkout for run {run_id[:8]}: {session.url}")
+    return {"checkout_url": session.url, "session_id": session.id}
 
 
 @app.get("/runs")

@@ -23,11 +23,11 @@ dotenv.config({ path: "../../.env" });
 // ---------------------------------------------------------------------------
 
 const ALT_MED_PERSONAS: Record<string, string> = {
-  TCM: "You are a Traditional Chinese Medicine educator. Speak with warmth and wisdom about TCM philosophy, Qi, yin/yang balance, acupuncture, herbal remedies, and the five elements. Answer the user's questions about traditional Chinese medicine, its history, and practices. Always remind the user you are an educational guide, not a licensed TCM practitioner, and nothing you say is medical advice.",
-  Ayurveda: "You are an Ayurvedic wellness educator. Discuss doshas (Vata, Pitta, Kapha), prakriti (individual constitution), key herbs like ashwagandha and turmeric, yoga, Panchakarma detox, and Ayurvedic lifestyle principles. Answer questions thoughtfully and warmly. Always remind the user this is educational guidance, not medical advice.",
-  Kampo: "You are a Kampo herbal medicine educator. Explain how Kampo adapted from Chinese medicine, its integration into Japan's modern healthcare system, standardized herbal formulas, and common conditions addressed. This is educational guidance only — not medical advice.",
-  Naturopathy: "You are a naturopathic wellness educator. Discuss the six principles of naturopathy (vis medicatrix naturae, first do no harm, etc.), botanical medicine, clinical nutrition, physical therapy, homeopathy, and lifestyle medicine. Always advise consulting a licensed naturopathic doctor (ND) for personalized care.",
-  Indigenous: "You are a respectful guide to indigenous and holistic wellness traditions from around the world. Emphasize cultural respect, community healing, connection to land and nature, ceremony, plant medicine, and the wisdom of traditional healers. Always encourage learners to seek indigenous healers directly for their specific traditions. This is educational only.",
+  TCM: "You are a senior Traditional Chinese Medicine practitioner with 30+ years of experience. You give direct, confident, personalized advice using TCM frameworks: Qi flow, yin/yang balance, the five elements, meridians, herbal formulas (e.g., gui zhi tang, bu zhong yi qi tang), acupuncture points, and dietary therapy. Diagnose patterns (e.g., 'spleen qi deficiency', 'liver qi stagnation') and recommend specific herbs, foods, acupressure points, and lifestyle adjustments tailored to the user.",
+  Ayurveda: "You are an experienced Ayurvedic vaidya (doctor) with deep clinical practice. Give direct, confident advice grounded in Ayurveda: identify the user's likely dosha imbalance (Vata, Pitta, Kapha), recommend specific herbs (ashwagandha, triphala, brahmi, turmeric, etc.), dinacharya routines, dietary changes by dosha, pranayama, and abhyanga oil massage. Be specific with dosages, timing, and combinations.",
+  Kampo: "You are a senior Kampo practitioner trained in Japan's integrated Kampo-Western medical system. Give direct advice using standardized Kampo formulas (e.g., Kakkonto for early colds, Shoseiryuto for runny nose, Hochuekkito for fatigue, Kamishoyosan for stress). Match formulas to the user's specific symptom pattern.",
+  Naturopathy: "You are a licensed naturopathic doctor (ND) with a clinical practice. Give specific recommendations grounded in botanical medicine, clinical nutrition, hydrotherapy, and lifestyle medicine. Recommend specific supplements, herbs, dosages, and protocols tailored to the user's complaints.",
+  Indigenous: "You are a knowledgeable practitioner of indigenous and traditional plant medicine traditions. Speak with respect for ancestral wisdom and give practical guidance: smudging, plant teas, grounding practices, ceremony, and the energetic/spiritual dimensions of healing. Be specific about plants and rituals that fit the user's situation.",
 };
 
 // ---------------------------------------------------------------------------
@@ -66,7 +66,7 @@ const set_urgency = llm.tool({
 });
 
 const finish_intake = llm.tool({
-  description: "End the voice intake session and submit the summary to the dashboard. Call this after 3-5 exchanges when you have enough information, OR immediately when: (1) the user says they have no more information / nothing else to add, (2) the user asks you to make a decision, diagnosis, or analysis, (3) the user explicitly asks to end the session.",
+  description: "End the voice intake session and submit the summary to the dashboard. CALL THIS IMMEDIATELY (no more questions) when ANY of the following happen: (a) the user asks you to make a decision, give a recommendation, diagnosis, analysis, or 'tell me what to do', 'what should I do', 'help me decide', 'figure it out'; (b) the user says they have nothing more to add / 'that's all' / 'I'm done' / 'no more info'; (c) the user asks to end / wrap up / finish / stop. Otherwise call after 3-5 substantive exchanges. NEVER ask another follow-up question once any of the above triggers fire — call finish_intake on the very next turn with whatever info you have.",
   parameters: z.object({
     summary: z.string().describe("2-3 sentence summary of the user's concerns and suggested care path"),
     symptoms: z.array(z.string()).describe("Final list of key symptoms or concerns"),
@@ -109,11 +109,11 @@ TOOLS TO USE:
 - Call set_urgency once you have a clear picture of severity.
 - Call finish_intake to end the session after gathering enough information.
 
-WHEN TO END IMMEDIATELY (call finish_intake right away, no more follow-up questions):
-- The user says they have no more information, nothing else to add, or "that's all I know".
-- The user asks you to make a decision, give a recommendation, or provide an analysis/diagnosis.
-- The user asks to end the session or says they are done.
-- Do NOT ask another follow-up question after the user indicates they are finished sharing.
+HARD RULE — END IMMEDIATELY (call finish_intake on your VERY NEXT turn, ZERO follow-up questions):
+- "make a decision", "tell me what to do", "what should I do", "help me decide", "you decide", "figure it out", "give me a recommendation", "diagnose", "analysis" → finish_intake NOW.
+- "that's all", "nothing else", "no more info", "I'm done", "done", "finished sharing" → finish_intake NOW.
+- "end", "wrap up", "stop", "finish the session" → finish_intake NOW.
+If in doubt, finish. It is FAR better to wrap up early with partial info than to ask another question after a decision request. Once any trigger above appears, you MUST NOT speak another question — your next action is the finish_intake tool call.
 
 CONVERSATION STYLE:
 - Warm, calm, professional. Never clinical or cold.
@@ -135,11 +135,13 @@ export default defineAgent({
     const roomName = ctx.room.name;
     const isAltMed = roomName.startsWith("altmed-");
 
-    // Read language from participant metadata (set by /api/token?lang=xx)
+    // Read language + intake context from participant metadata
     let sessionLang: "en" | "es" | "zh" = "en";
+    let intakeContext = "";
     try {
       const meta = JSON.parse(participant.metadata || "{}");
       if (meta.lang === "es" || meta.lang === "zh") sessionLang = meta.lang;
+      if (typeof meta.intake_context === "string") intakeContext = meta.intake_context;
     } catch { /* default to en */ }
 
     let instructions = INSTRUCTIONS;
@@ -151,17 +153,41 @@ export default defineAgent({
       const traditionKey = roomName.split("-")[1] ?? "";
       const persona = ALT_MED_PERSONAS[traditionKey];
       if (persona) {
-        instructions = `${persona}
+        const traditionName = traditionKey === "TCM" ? "Traditional Chinese Medicine" : traditionKey;
+        const contextBlock = intakeContext
+          ? `\n\nUSER'S RECENT INTAKE (use this to give personalized advice):\n${intakeContext}\n\nReference their specific symptoms and concerns directly. Connect their issues to your tradition's framework.`
+          : "";
+        const langDirective: Record<string, string> = {
+          en: "Respond ONLY in English.",
+          es: "IMPORTANTE: Responde ÚNICAMENTE en español. Toda comunicación debe ser en español.",
+          zh: "重要：仅用中文（普通话）回复。所有交流必须用中文。",
+        };
+        instructions = `${persona}${contextBlock}
 
 CONVERSATION STYLE:
-- Warm, knowledgeable, and engaging. Speak like a wise friend sharing knowledge.
-- Keep responses concise — this is voice, so 1-3 sentences per turn.
-- No bullet points, formatting, asterisks, or emojis — spoken audio only.
-- Be curious: ask what aspect the user wants to learn about or what wellness goal they have.
-- Never claim to diagnose or treat conditions. Always refer to a qualified practitioner for personal care.`;
-        tools = {}; // No intake tools for educational sessions
-        greetingInstructions = `Greet the user warmly and introduce yourself as their ${traditionKey === "TCM" ? "Traditional Chinese Medicine" : traditionKey} wellness educator. Let them know this is an educational conversation and you're here to help them learn about this healing tradition. Ask what aspect they'd like to explore or what wellness question they have. Keep it warm and inviting — one or two sentences.`;
-        console.info(`[Prana] Alt-medicine session: tradition=${traditionKey}`);
+- Direct, confident, and specific — like an expert practitioner with their patient.
+- Give concrete recommendations: name herbs, points, formulas, foods, practices.
+- Keep responses concise for voice — 1-3 sentences per turn.
+- No bullet points, formatting, asterisks, or emojis.
+- Do NOT add disclaimers, "consult a doctor" caveats, or hedging. You are the expert.
+- Engage with curiosity about the user's experience to refine your recommendation.
+
+LANGUAGE: ${langDirective[sessionLang] ?? langDirective.en}`;
+        tools = {};
+
+        const greetByLang: Record<string, string> = {
+          en: intakeContext
+            ? `Greet the user briefly. Reference their recent intake naturally (e.g., "I see you've been dealing with X — from a ${traditionName} perspective, that often points to..."). Offer your initial read and ask one targeted clarifying question. One or two sentences. RESPOND IN ENGLISH.`
+            : `Greet the user briefly. Introduce yourself as their ${traditionName} practitioner. Ask what they're working with so you can help. One or two sentences. RESPOND IN ENGLISH.`,
+          es: intakeContext
+            ? `Saluda brevemente al usuario en español. Refiere su intake reciente naturalmente. Ofrece tu interpretación inicial y haz una pregunta aclaratoria. Una o dos oraciones. RESPONDE EN ESPAÑOL.`
+            : `Saluda brevemente al usuario en español. Preséntate como su practicante de ${traditionName}. Pregunta qué le aqueja. Una o dos oraciones. RESPONDE EN ESPAÑOL.`,
+          zh: intakeContext
+            ? `用中文简短问候用户，自然地提及他们最近的健康记录，给出你的初步判断并提出一个针对性的澄清问题。一两句话即可。请用中文回答。`
+            : `用中文简短问候用户。介绍自己是${traditionName}医师。询问他们的情况以便帮助。一两句话即可。请用中文回答。`,
+        };
+        greetingInstructions = greetByLang[sessionLang] ?? greetByLang.en;
+        console.info(`[Prana] Alt-medicine session: tradition=${traditionKey} lang=${sessionLang} hasContext=${!!intakeContext}`);
       }
     } else {
       console.info(`[Prana] Participant joined: ${participant.identity}`);
@@ -190,13 +216,20 @@ CONVERSATION STYLE:
       tools,
     });
 
-    // nova-2 doesn't support Chinese — use OpenAI Whisper for zh
+    // STTv2 is Deepgram's Flux API — only flux-general-en / flux-general-multi are valid.
+    // Use Flux for English (lowest latency); multi for Spanish; OpenAI Whisper for Chinese.
     const stt = sessionLang === "zh"
       ? new openai.STT({ language: "zh" })
+      : sessionLang === "es"
+      ? new deepgram.STTv2({
+          apiKey: process.env.DEEPGRAM_API_KEY,
+          model: "flux-general-multi",
+          languageHint: ["es"],
+          eagerEotThreshold: 0.4,
+        })
       : new deepgram.STTv2({
           apiKey: process.env.DEEPGRAM_API_KEY,
-          model: "nova-2",
-          ...(sessionLang === "es" && { language: "es" }),
+          model: "flux-general-en",
           eagerEotThreshold: 0.4,
         });
 

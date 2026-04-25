@@ -65,6 +65,7 @@ def make_seller_agent(
         mailbox=True,
         publish_agent_details=True,
         readme_path=readme_path,
+        network="testnet",
     )
     agent_logger = logging.getLogger(f"shopping-{name}")
 
