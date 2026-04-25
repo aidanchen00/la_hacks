@@ -8,6 +8,7 @@ import { motion } from "motion/react";
 import LanguagePicker from "@/app/components/LanguagePicker";
 import {
   SEED_MEMORIES,
+  DEFAULT_MEMORY_PROMPT,
   loadUserMemories,
   addMemory,
   removeMemory,
@@ -119,6 +120,9 @@ export default function MemoryWorldPage() {
       createdAt: Date.now(),
     });
     setUserMemories(next);
+    // Newly uploaded photos go into the library AND become the active seed,
+    // so let the image drive the generation instead of competing with text.
+    setPrompt(DEFAULT_MEMORY_PROMPT);
     setSelectedMemoryId(null);
   };
 
@@ -126,6 +130,8 @@ export default function MemoryWorldPage() {
     setError(null);
     setSelectedMemoryId(m.id);
     setImagePreview(m.src);
+    // Use a general prompt so Odyssey is guided by the image, not the text
+    setPrompt(m.customPrompt ?? DEFAULT_MEMORY_PROMPT);
     try {
       const file = await resolveMemorySrc(m.src);
       setImageFile(file);
