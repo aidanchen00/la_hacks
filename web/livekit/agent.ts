@@ -91,7 +91,7 @@ const finish_intake = llm.tool({
 // Agent definition
 // ---------------------------------------------------------------------------
 
-const INSTRUCTIONS = `You are CareFlow, a compassionate AI wellness companion conducting a confidential voice health intake.
+const INSTRUCTIONS = `You are Prana, a compassionate AI wellness companion conducting a confidential voice health intake.
 
 DISCLAIMERS (state naturally at the start):
 - You are a wellness education and care-navigation tool, NOT a replacement for licensed medical care.
@@ -134,10 +134,18 @@ export default defineAgent({
     // Detect alt-medicine session by room name prefix: altmed-<TraditionKey>-<random>
     const roomName = ctx.room.name;
     const isAltMed = roomName.startsWith("altmed-");
+
+    // Read language from participant metadata (set by /api/token?lang=xx)
+    let sessionLang: "en" | "es" | "zh" = "en";
+    try {
+      const meta = JSON.parse(participant.metadata || "{}");
+      if (meta.lang === "es" || meta.lang === "zh") sessionLang = meta.lang;
+    } catch { /* default to en */ }
+
     let instructions = INSTRUCTIONS;
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     let tools: Record<string, any> = { extract_symptoms, set_urgency, finish_intake };
-    let greetingInstructions = "Greet the user warmly. Introduce yourself as CareFlow, a wellness care-navigation companion. Briefly mention you are not a doctor and this is not medical advice — for emergencies they should call 911. Then ask them what health or wellness concern they'd like to discuss today. Keep it warm and brief.";
+    let greetingInstructions = "Greet the user warmly. Introduce yourself as Prana, a wellness care-navigation companion. Briefly mention you are not a doctor and this is not medical advice — for emergencies they should call 911. Then ask them what health or wellness concern they'd like to discuss today. Keep it warm and brief.";
 
     if (isAltMed) {
       const traditionKey = roomName.split("-")[1] ?? "";
@@ -153,10 +161,28 @@ CONVERSATION STYLE:
 - Never claim to diagnose or treat conditions. Always refer to a qualified practitioner for personal care.`;
         tools = {}; // No intake tools for educational sessions
         greetingInstructions = `Greet the user warmly and introduce yourself as their ${traditionKey === "TCM" ? "Traditional Chinese Medicine" : traditionKey} wellness educator. Let them know this is an educational conversation and you're here to help them learn about this healing tradition. Ask what aspect they'd like to explore or what wellness question they have. Keep it warm and inviting — one or two sentences.`;
-        console.info(`[CareFlow] Alt-medicine session: tradition=${traditionKey}`);
+        console.info(`[Prana] Alt-medicine session: tradition=${traditionKey}`);
       }
     } else {
-      console.info(`[CareFlow] Participant joined: ${participant.identity}`);
+      console.info(`[Prana] Participant joined: ${participant.identity}`);
+    }
+
+    const deepgramLang = sessionLang === "zh" ? "zh-CN" : sessionLang;
+
+    const LANG_INSTRUCTIONS: Record<string, string> = {
+      en: "Always respond in English.",
+      es: "IMPORTANTE: Responde siempre en español. Toda tu comunicación debe ser en español.",
+      zh: "重要提示：请始终用中文（普通话）回复。所有交流都必须用中文进行。",
+    };
+    const LANG_GREETINGS: Record<string, string> = {
+      en: "Greet the user warmly. Introduce yourself as Prana, a wellness care-navigation companion. Briefly mention you are not a doctor and this is not medical advice — for emergencies they should call 911. Then ask them what health or wellness concern they'd like to discuss today. Keep it warm and brief.",
+      es: "Saluda calurosamente al usuario en español. Preséntate como Prana, un asistente de navegación de salud. Menciona brevemente que no eres médico y esto no es consejo médico — para emergencias deben llamar al 911. Luego pregunta qué problema de salud o bienestar les gustaría discutir hoy. Sé cálido y breve.",
+      zh: "用中文热情地问候用户。介绍自己是Prana，一个健康护理导航助手。简要说明你不是医生，这不是医疗建议——紧急情况请拨打911。然后询问用户今天想讨论什么健康问题。保持温暖简短。",
+    };
+
+    if (!isAltMed) {
+      instructions = `${instructions}\n\nLANGUAGE: ${LANG_INSTRUCTIONS[sessionLang] ?? LANG_INSTRUCTIONS.en}`;
+      greetingInstructions = LANG_GREETINGS[sessionLang] ?? LANG_GREETINGS.en;
     }
 
     const agent = new voice.Agent({
@@ -164,9 +190,19 @@ CONVERSATION STYLE:
       tools,
     });
 
+    // nova-2 doesn't support Chinese — use OpenAI Whisper for zh
+    const stt = sessionLang === "zh"
+      ? new openai.STT({ language: "zh" })
+      : new deepgram.STTv2({
+          apiKey: process.env.DEEPGRAM_API_KEY,
+          model: "nova-2",
+          ...(sessionLang === "es" && { language: "es" }),
+          eagerEotThreshold: 0.4,
+        });
+
     const session = new voice.AgentSession({
       vad: ctx.proc.userData.vad as silero.VAD,
-      stt: new deepgram.STTv2({ apiKey: process.env.DEEPGRAM_API_KEY, model: "flux-general-en", eagerEotThreshold: 0.4 }),
+      stt,
       llm: new openai.LLM({ model: "gpt-4.1-mini" }),
       tts: new elevenlabs.TTS({ apiKey: process.env.ELEVENLABS_API_KEY, modelID: "eleven_turbo_v2_5", voiceId: "Xb7hH8MSUJpSbSDYk0k2" }),
       turnDetection: "stt",
@@ -175,30 +211,30 @@ CONVERSATION STYLE:
     session.on(voice.AgentSessionEventTypes.ConversationItemAdded, async (ev) => {
       const text = ev.item.textContent;
       if (!text || text.trim().length < 1) return;
-      console.info(`[CareFlow] ${ev.item.role}: ${text.slice(0, 120)}`);
+      console.info(`[Prana] ${ev.item.role}: ${text.slice(0, 120)}`);
     });
 
     session.on(voice.AgentSessionEventTypes.AgentStateChanged, (ev) => {
-      console.info(`[CareFlow] agent state → ${ev.newState}`);
+      console.info(`[Prana] agent state → ${ev.newState}`);
     });
 
     session.on(voice.AgentSessionEventTypes.UserInputTranscribed, (ev) => {
-      console.info(`[CareFlow] user transcript: ${JSON.stringify(ev).slice(0, 200)}`);
+      console.info(`[Prana] user transcript: ${JSON.stringify(ev).slice(0, 200)}`);
     });
 
     session.on(voice.AgentSessionEventTypes.Error, (ev) => {
       const src = ev.source?.constructor?.name ?? "unknown";
-      console.error(`[CareFlow][ERROR src=${src}]`, ev.error);
+      console.error(`[Prana][ERROR src=${src}]`, ev.error);
     });
 
     session.on(voice.AgentSessionEventTypes.MetricsCollected, (ev) => {
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const m: any = ev.metrics ?? ev;
-      console.info(`[CareFlow] metrics ${m?.type ?? "?"}:`, JSON.stringify(m).slice(0, 300));
+      console.info(`[Prana] metrics ${m?.type ?? "?"}:`, JSON.stringify(m).slice(0, 300));
     });
 
     session.on(voice.AgentSessionEventTypes.Close, (ev) => {
-      console.warn(`[CareFlow] session closed: reason=${ev.reason} err=`, ev.error);
+      console.warn(`[Prana] session closed: reason=${ev.reason} err=`, ev.error);
     });
 
     await session.start({ agent, room: ctx.room });
