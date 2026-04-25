@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { useSearchParams, useRouter } from "next/navigation";
-import { getRun, type RunStatus, type RoutingDecision } from "@/lib/api";
+import { getRun, listRuns, type RunStatus, type RoutingDecision, type RunSummary } from "@/lib/api";
 import { FIXTURE_ROUTING_DECISION } from "@/fixtures";
 import { Suspense } from "react";
 import { motion } from "motion/react";
@@ -103,6 +103,8 @@ function DashboardContent() {
   const isDemo = runId === "demo";
   const [run, setRun] = useState<RunStatus | null>(null);
   const [loading, setLoading] = useState(!isDemo);
+  const [pastRuns, setPastRuns] = useState<RunSummary[]>([]);
+  const [pastLoading, setPastLoading] = useState(false);
 
   useEffect(() => {
     if (isDemo) {
@@ -115,7 +117,15 @@ function DashboardContent() {
       });
       return;
     }
-    if (!runId) { setLoading(false); return; }
+    if (!runId) {
+      setLoading(false);
+      setPastLoading(true);
+      listRuns()
+        .then((data) => { if (Array.isArray(data)) setPastRuns(data); })
+        .catch(() => {})
+        .finally(() => setPastLoading(false));
+      return;
+    }
     const poll = async () => {
       try {
         const data = await getRun(runId);
@@ -186,14 +196,69 @@ function DashboardContent() {
             </p>
           </motion.div>
         ) : !run && !runId ? (
-          <div className="text-center py-20">
-            <p className="font-serif text-[#1F3A2E] text-2xl font-medium mb-4">
-              No intake session found.
+          <div>
+            <h1 className="font-serif text-[#1F3A2E] text-2xl sm:text-[36px] leading-[1.3] font-medium mb-3">
+              Your intake history
+            </h1>
+            <p className="text-[#6B7280] mb-8">
+              Pick a past session to view its care plan, or start a new intake.
             </p>
-            <p className="text-[#6B7280] mb-6">Start a voice intake to get personalized guidance.</p>
-            <a href="/" className="inline-block bg-[#1F3A2E] text-white py-3 px-8 rounded-full font-medium hover:bg-[#2A4D3D] transition-colors">
-              Start Intake
-            </a>
+
+            {pastLoading ? (
+              <p className="text-[#6B7280] text-sm">Loading…</p>
+            ) : pastRuns.length === 0 ? (
+              <div className="bg-[#EFEAE0] rounded-2xl p-8 text-center border border-[#1F3A2E]/10">
+                <p className="font-serif text-[#1F3A2E] text-xl mb-3">No past intakes yet.</p>
+                <p className="text-[#6B7280] text-sm mb-6">
+                  Start a voice or text intake to get a personalized care plan.
+                </p>
+                <a
+                  href="/"
+                  className="inline-block bg-[#1F3A2E] text-white py-3 px-8 rounded-full font-medium hover:bg-[#2A4D3D] transition-colors"
+                >
+                  Start Intake
+                </a>
+              </div>
+            ) : (
+              <div className="space-y-3">
+                {pastRuns.map((r) => {
+                  const label = r.rd_summary ?? r.intake_summary ?? r.instruction ?? "Intake session";
+                  const date = new Date(r.created_at).toLocaleDateString(undefined, {
+                    month: "short", day: "numeric", year: "numeric",
+                  });
+                  const cfg = r.urgency ? urgencyConfig[r.urgency] : null;
+                  const pathLabel = r.recommended_path
+                    ? PATH_CONFIG[r.recommended_path as keyof typeof PATH_CONFIG]?.label ?? r.recommended_path.replace(/_/g, " ")
+                    : "Pending";
+                  return (
+                    <motion.button
+                      key={r.id}
+                      onClick={() => router.push(`/dashboard?run_id=${r.id}`)}
+                      whileHover={{ scale: 1.005 }}
+                      whileTap={{ scale: 0.995 }}
+                      className="w-full text-left bg-[#EFEAE0] rounded-2xl p-5 border border-[#1F3A2E]/10 hover:border-[#1F3A2E]/30 transition-colors"
+                    >
+                      <div className="flex items-start gap-3 mb-2">
+                        <p className="text-[#3D3D3D] text-sm leading-relaxed flex-1 line-clamp-2">
+                          {label.length > 120 ? label.slice(0, 120) + "…" : label}
+                        </p>
+                        {cfg && (
+                          <span
+                            className="text-xs font-bold px-2.5 py-1 rounded-full whitespace-nowrap flex-shrink-0 uppercase tracking-wide"
+                            style={{ color: cfg.color, backgroundColor: cfg.bg }}
+                          >
+                            {cfg.text}
+                          </span>
+                        )}
+                      </div>
+                      <p className="text-[#6B7280] text-xs">
+                        {date} · {pathLabel}
+                      </p>
+                    </motion.button>
+                  );
+                })}
+              </div>
+            )}
           </div>
         ) : (
           <>

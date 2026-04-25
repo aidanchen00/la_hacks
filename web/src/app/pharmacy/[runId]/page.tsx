@@ -2,7 +2,10 @@
 
 import { useEffect, useState, useRef, useCallback } from "react";
 import { useParams, useSearchParams } from "next/navigation";
-import { getRun, getBudget, createBudgetCheckout, type CartItem } from "@/lib/api";
+import {
+  getRun, getBudget, createBudgetCheckout, runRanker, getRanker,
+  type CartItem, type RankerSelectionItem,
+} from "@/lib/api";
 import { motion } from "motion/react";
 
 interface SessionInfo {
@@ -28,15 +31,28 @@ export default function PharmacyPage() {
   const [cart, setCart] = useState<CartItem[]>([]);
   const [checkoutLoading, setCheckoutLoading] = useState(false);
   const [checkoutError, setCheckoutError] = useState<string | null>(null);
+  const [intakeSummary, setIntakeSummary] = useState("");
+  const [rankerItems, setRankerItems] = useState<RankerSelectionItem[]>([]);
+  const [rankerRationale, setRankerRationale] = useState("");
+  const [rankerLoading, setRankerLoading] = useState(false);
+  const rankerFiredRef = useRef(false);
 
   const browserPollRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const cartPollRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const rankerPollRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   useEffect(() => {
     if (!runId || runId === "no-run") return;
     getRun(runId).then((run) => {
       if (run.routing_decision?.requires_doctor_approval) {
         setRequiresDoctorApproval(true);
+      }
+      if (run.intake_summary) setIntakeSummary(run.intake_summary);
+    }).catch(() => {});
+    // Pick up any prior ranker selection (e.g. on page reload after payment)
+    getRanker(runId, "pharmacy").then((data) => {
+      if (data.items?.length) {
+        setRankerItems(data.items);
       }
     }).catch(() => {});
   }, [runId]);
@@ -102,17 +118,85 @@ export default function PharmacyPage() {
 
   const inStockItems = cart.filter((c) => c.in_stock && c.item_name && c.item_price > 0);
   const cartTotal = inStockItems.reduce((sum, c) => sum + c.item_price, 0);
-  const checkoutDisabled = inStockItems.length === 0 || checkoutLoading || requiresDoctorApproval;
+
+  // Once all sessions are done and the cart has at least one in-stock item,
+  // fire the ranker uAgent (only once per run).
+  useEffect(() => {
+    if (!runId || runId === "no-run") return;
+    if (rankerFiredRef.current || rankerLoading) return;
+    if (!sessions.length) return;
+    const allDone = sessions.every((s) => s.done || s.status === "error" || !s.sessionId);
+    if (!allDone) return;
+    const candidates = inStockItems.map((c) => ({
+      source_agent: c.agent_name || c.platform,
+      name: c.item_name || "Unknown",
+      price: c.item_price,
+      url: c.item_url,
+      description: c.item_description,
+      metadata: { in_stock: !!c.in_stock, cart_id: c.id, platform: c.platform },
+    }));
+    if (!candidates.length) return;
+    rankerFiredRef.current = true;
+    setRankerLoading(true);
+    runRanker(runId, {
+      domain: "pharmacy",
+      query,
+      intake_summary: intakeSummary,
+      requires_doctor_approval: requiresDoctorApproval,
+      total_budget_usd: totalBudget,
+      per_agent_budget_usd: totalBudget / 3,
+      candidates,
+    })
+      .catch((e) => console.warn("[ranker] pharmacy ranker failed:", e))
+      .finally(() => {
+        // Poll for persisted result a few times in case ranker is async
+        const start = Date.now();
+        rankerPollRef.current = setInterval(async () => {
+          try {
+            const data = await getRanker(runId, "pharmacy");
+            if (data.items.length) {
+              setRankerItems(data.items);
+              const lastEvtRationale = data.items.find((i) => i.rationale)?.rationale ?? "";
+              if (lastEvtRationale && !rankerRationale) setRankerRationale(lastEvtRationale);
+              if (rankerPollRef.current) clearInterval(rankerPollRef.current);
+              setRankerLoading(false);
+            }
+          } catch { /* ignore */ }
+          if (Date.now() - start > 30000 && rankerPollRef.current) {
+            clearInterval(rankerPollRef.current);
+            setRankerLoading(false);
+          }
+        }, 1500);
+      });
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [sessions, cart.length]);
+
+  // Cleanup ranker poll on unmount
+  useEffect(() => () => { if (rankerPollRef.current) clearInterval(rankerPollRef.current); }, []);
+
+  const rankerSelected = rankerItems.filter((i) => i.selected);
+  const rankerSelectedTotal = rankerSelected.reduce((s, i) => s + i.price, 0);
+  const useRankerCheckout = rankerSelected.length > 0;
+  const checkoutItemCount = useRankerCheckout ? rankerSelected.length : inStockItems.length;
+  const checkoutTotal = useRankerCheckout ? rankerSelectedTotal : cartTotal;
+  const checkoutDisabled = checkoutItemCount === 0 || checkoutLoading || requiresDoctorApproval;
 
   const handleCheckout = async () => {
     setCheckoutLoading(true);
     setCheckoutError(null);
     try {
-      const items = inStockItems.map((c) => ({
-        name: c.item_name ?? "Unknown product",
-        platform: c.platform,
-        price: c.item_price,
-      }));
+      const items = useRankerCheckout
+        ? rankerSelected.map((r) => ({
+            id: r.id,
+            name: r.name,
+            platform: r.source_agent,
+            price: r.price,
+          }))
+        : inStockItems.map((c) => ({
+            name: c.item_name ?? "Unknown product",
+            platform: c.platform,
+            price: c.item_price,
+          }));
       const { checkout_url } = await createBudgetCheckout(runId, items);
       window.location.href = checkout_url;
     } catch (e) {
@@ -282,6 +366,96 @@ export default function PharmacyPage() {
           </motion.div>
         )}
 
+        {/* Ranker sidebar — shows what the Ranker agent picked vs everything found */}
+        {(rankerLoading || rankerItems.length > 0) && (
+          <motion.div
+            initial={{ opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
+            className="bg-[#EFEAE0] rounded-2xl p-6 border border-[#1F3A2E]/15 mb-5"
+          >
+            <div className="flex items-center mb-4">
+              <h3 className="font-serif text-[#1F3A2E] text-xl font-medium">
+                🤖 Ranker Agent
+              </h3>
+              <span className="ml-auto text-xs text-[#6B7280]">
+                {rankerLoading
+                  ? "Ranking candidates…"
+                  : `${rankerSelected.length} of ${rankerItems.length} picked`}
+              </span>
+            </div>
+            {rankerRationale && (
+              <p className="text-sm text-[#3D3D3D] bg-white border border-[#1F3A2E]/10 rounded-xl px-4 py-3 mb-4">
+                {rankerRationale}
+              </p>
+            )}
+            <div className="grid md:grid-cols-2 gap-4">
+              <div>
+                <div className="text-xs font-semibold text-[#1F3A2E] uppercase tracking-wider mb-2">
+                  Found ({rankerItems.length})
+                </div>
+                <div className="space-y-1.5 max-h-[260px] overflow-y-auto pr-1">
+                  {rankerItems.length === 0 && (
+                    <div className="text-xs text-[#6B7280]">Waiting for selection…</div>
+                  )}
+                  {rankerItems.map((it) => (
+                    <div
+                      key={`${it.source_agent}-${it.name}-${it.id ?? ""}`}
+                      className={`text-xs px-3 py-2 rounded-lg border ${
+                        it.selected
+                          ? "bg-[#DCFCE7] border-[#16A34A]/30 text-[#1F3A2E]"
+                          : "bg-white border-[#1F3A2E]/10 text-[#6B7280]"
+                      }`}
+                    >
+                      <div className="flex justify-between gap-2">
+                        <span className="truncate">
+                          <strong>{it.source_agent}</strong> · {it.name}
+                        </span>
+                        <span className="font-semibold flex-shrink-0">
+                          ${it.price.toFixed(2)}
+                        </span>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+              <div>
+                <div className="text-xs font-semibold text-[#16A34A] uppercase tracking-wider mb-2">
+                  Selected for checkout ({rankerSelected.length})
+                </div>
+                <div className="space-y-1.5">
+                  {rankerSelected.length === 0 && !rankerLoading && (
+                    <div className="text-xs text-[#6B7280]">No items selected.</div>
+                  )}
+                  {rankerSelected.map((it) => (
+                    <div
+                      key={`sel-${it.id ?? it.name}`}
+                      className="bg-white border border-[#16A34A]/30 rounded-lg px-3 py-2"
+                    >
+                      <div className="flex justify-between gap-2 text-sm">
+                        <span className="text-[#1F3A2E] truncate">
+                          <strong>{it.source_agent}</strong> · {it.name}
+                        </span>
+                        <span className="font-semibold text-[#16A34A] flex-shrink-0">
+                          ${it.price.toFixed(2)}
+                        </span>
+                      </div>
+                      {it.rationale && (
+                        <div className="text-xs text-[#6B7280] mt-1">{it.rationale}</div>
+                      )}
+                    </div>
+                  ))}
+                  {rankerSelected.length > 0 && (
+                    <div className="flex justify-between pt-2 mt-1 border-t border-[#16A34A]/30 text-sm font-semibold">
+                      <span className="text-[#3D3D3D]">Selected total</span>
+                      <span className="text-[#16A34A]">${rankerSelectedTotal.toFixed(2)}</span>
+                    </div>
+                  )}
+                </div>
+              </div>
+            </div>
+          </motion.div>
+        )}
+
         {/* Cart */}
         {cart.length > 0 && (
           <motion.div
@@ -357,9 +531,11 @@ export default function PharmacyPage() {
             >
               {checkoutLoading
                 ? "Redirecting to Stripe…"
-                : inStockItems.length === 0
+                : checkoutItemCount === 0
                   ? "No items available to check out"
-                  : `Review & Checkout (${inStockItems.length} items · $${cartTotal.toFixed(2)})`}
+                  : useRankerCheckout
+                    ? `Checkout Ranker picks (${checkoutItemCount} item${checkoutItemCount > 1 ? "s" : ""} · $${checkoutTotal.toFixed(2)})`
+                    : `Review & Checkout (${checkoutItemCount} items · $${checkoutTotal.toFixed(2)})`}
             </motion.button>
 
             <p className="text-center text-xs text-[#6B7280] mt-3">

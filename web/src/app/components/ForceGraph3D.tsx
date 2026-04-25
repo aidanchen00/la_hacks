@@ -161,7 +161,7 @@ export default function ForceGraph3D({ graphData, onNodeClick, focusNodeId, widt
       graphData={data}
       width={width}
       height={height}
-      backgroundColor="#080c14"
+      backgroundColor="#1F3A2E"
       nodeThreeObject={createNode}
       nodeThreeObjectExtend={false}
       onNodeClick={handleClick}
