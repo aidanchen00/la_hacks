@@ -28,67 +28,101 @@ const PATH_ICONS: Record<string, string> = {
 
 function RecentSessions() {
   const [runs, setRuns] = useState<RunSummary[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(false);
   const router = useRouter();
 
-  useEffect(() => {
+  const load = useCallback(() => {
+    setLoading(true);
+    setError(false);
     listRuns()
       .then((data) => { if (Array.isArray(data)) setRuns(data.slice(0, 6)); })
-      .catch(() => {});
+      .catch(() => setError(true))
+      .finally(() => setLoading(false));
   }, []);
 
-  if (!runs.length) return null;
+  useEffect(() => { load(); }, [load]);
 
   return (
     <div style={{ width: "100%", maxWidth: 480 }}>
-      <div style={{ fontSize: 12, fontWeight: 600, color: "#475569", textTransform: "uppercase", letterSpacing: "0.07em", marginBottom: 10 }}>
-        Recent Sessions
+      <div style={{ fontSize: 12, fontWeight: 600, color: "#475569", textTransform: "uppercase", letterSpacing: "0.07em", marginBottom: 10, display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+        <span>Past Intakes</span>
+        {!loading && (
+          <button onClick={load} style={{ background: "none", border: "none", color: "#475569", cursor: "pointer", fontSize: 12, padding: 0 }}>
+            ↺ Refresh
+          </button>
+        )}
       </div>
-      <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-        {runs.map((run) => {
-          const label = run.rd_summary ?? run.intake_summary ?? run.instruction ?? "Intake session";
-          const icon = PATH_ICONS[run.recommended_path ?? ""] ?? "🩺";
-          const color = URGENCY_COLORS[run.urgency ?? ""] ?? "#64748b";
-          const date = new Date(run.created_at).toLocaleDateString(undefined, { month: "short", day: "numeric" });
-          return (
-            <button
-              key={run.id}
-              onClick={() => router.push(`/dashboard?run_id=${run.id}`)}
-              style={{
-                background: "var(--surface)",
-                border: "1px solid var(--border)",
-                borderRadius: 12,
-                padding: "12px 14px",
-                cursor: "pointer",
-                textAlign: "left",
-                display: "flex",
-                alignItems: "center",
-                gap: 10,
-                width: "100%",
-                transition: "border-color 0.15s",
-              }}
-            >
-              <span style={{ fontSize: 18, flexShrink: 0 }}>{icon}</span>
-              <div style={{ flex: 1, minWidth: 0 }}>
-                <div style={{ fontSize: 13, color: "#e2e8f0", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-                  {label.length > 72 ? label.slice(0, 72) + "…" : label}
+
+      {loading && (
+        <div style={{ textAlign: "center", color: "#475569", fontSize: 13, padding: "20px 0" }}>
+          Loading past intakes…
+        </div>
+      )}
+
+      {!loading && error && (
+        <div style={{ textAlign: "center", color: "#f87171", fontSize: 13, padding: "20px 0" }}>
+          Could not load past intakes — make sure the API server is running.
+        </div>
+      )}
+
+      {!loading && !error && runs.length === 0 && (
+        <div style={{
+          textAlign: "center", color: "#475569", fontSize: 13, padding: "20px 0",
+          border: "1px dashed rgba(71,85,105,0.3)", borderRadius: 12,
+        }}>
+          No past intakes yet. Complete a voice session to see them here.
+        </div>
+      )}
+
+      {!loading && !error && runs.length > 0 && (
+        <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+          {runs.map((run) => {
+            const label = run.rd_summary ?? run.intake_summary ?? run.instruction ?? "Intake session";
+            const icon = PATH_ICONS[run.recommended_path ?? ""] ?? "🩺";
+            const color = URGENCY_COLORS[run.urgency ?? ""] ?? "#64748b";
+            const date = new Date(run.created_at).toLocaleDateString(undefined, { month: "short", day: "numeric" });
+            return (
+              <button
+                key={run.id}
+                onClick={() => router.push(`/dashboard?run_id=${run.id}`)}
+                style={{
+                  background: "var(--surface)",
+                  border: "1px solid var(--border)",
+                  borderRadius: 12,
+                  padding: "12px 14px",
+                  cursor: "pointer",
+                  textAlign: "left",
+                  display: "flex",
+                  alignItems: "center",
+                  gap: 10,
+                  width: "100%",
+                  transition: "border-color 0.15s",
+                }}
+              >
+                <span style={{ fontSize: 18, flexShrink: 0 }}>{icon}</span>
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <div style={{ fontSize: 13, color: "#e2e8f0", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                    {label.length > 72 ? label.slice(0, 72) + "…" : label}
+                  </div>
+                  <div style={{ fontSize: 11, color: "#64748b", marginTop: 2 }}>
+                    {date} · {(run.recommended_path ?? "pending").replace(/_/g, " ")}
+                  </div>
                 </div>
-                <div style={{ fontSize: 11, color: "#64748b", marginTop: 2 }}>
-                  {date} · {(run.recommended_path ?? "pending").replace(/_/g, " ")}
-                </div>
-              </div>
-              {run.urgency && (
-                <span style={{
-                  fontSize: 10, fontWeight: 700, color, background: color + "20",
-                  borderRadius: 9999, padding: "2px 7px", whiteSpace: "nowrap", flexShrink: 0,
-                }}>
-                  {run.urgency}
-                </span>
-              )}
-              <span style={{ color: "#475569", fontSize: 12, flexShrink: 0 }}>→</span>
-            </button>
-          );
-        })}
-      </div>
+                {run.urgency && (
+                  <span style={{
+                    fontSize: 10, fontWeight: 700, color, background: color + "20",
+                    borderRadius: 9999, padding: "2px 7px", whiteSpace: "nowrap", flexShrink: 0,
+                  }}>
+                    {run.urgency}
+                  </span>
+                )}
+                <span style={{ color: "#475569", fontSize: 12, flexShrink: 0 }}>→</span>
+              </button>
+            );
+          })}
+        </div>
+      )}
     </div>
   );
 }
@@ -267,7 +301,9 @@ export default function HomePage() {
         <p style={{ color: "#64748b", marginTop: 8, fontSize: 15 }}>Voice-first wellness navigation · Powered by AI agents</p>
       </div>
       <VoiceIntake />
-      <RecentSessions />
+      <div style={{ width: "100%", maxWidth: 480, borderTop: "1px solid var(--border)", paddingTop: 24 }}>
+        <RecentSessions />
+      </div>
     </main>
   );
 }

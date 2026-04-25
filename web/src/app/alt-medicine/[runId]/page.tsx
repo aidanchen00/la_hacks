@@ -202,16 +202,21 @@ export default function AltMedicinePage() {
   const mapInstanceRef = useRef<any>(null);
   const [selected, setSelected] = useState<TraditionKey | null>(null);
   const [mapLoaded, setMapLoaded] = useState(false);
+  const [mapError, setMapError] = useState<string | null>(null);
   const [callOpen, setCallOpen] = useState(false);
 
-  // Load Mapbox
+  // Load Mapbox (client-only, defensive)
   useEffect(() => {
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    let map: any;
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    let mgl: any;
+    if (typeof window === "undefined" || !mapRef.current) return;
 
-    // Inject mapbox CSS if not already present
+    const token = process.env.NEXT_PUBLIC_MAPBOX_TOKEN;
+    if (!token) {
+      console.warn("[alt-medicine] NEXT_PUBLIC_MAPBOX_TOKEN missing");
+      setMapError("Map token not configured. Tradition cards still work.");
+      return;
+    }
+
+    // Inject mapbox CSS once
     if (!document.getElementById("mapbox-css")) {
       const link = document.createElement("link");
       link.id = "mapbox-css";
@@ -220,41 +225,60 @@ export default function AltMedicinePage() {
       document.head.appendChild(link);
     }
 
-    import("mapbox-gl").then((mb) => {
-      mgl = mb.default;
-      mgl.accessToken = process.env.NEXT_PUBLIC_MAPBOX_TOKEN ?? "";
+    let cancelled = false;
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    let map: any = null;
 
-      if (!mapRef.current) return;
-      map = new mgl.Map({
-        container: mapRef.current,
-        style: "mapbox://styles/mapbox/dark-v11",
-        center: [20, 20],
-        zoom: 1.8,
-      });
+    (async () => {
+      try {
+        const mb = await import("mapbox-gl");
+        if (cancelled || !mapRef.current) return;
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const mgl: any = mb.default;
+        mgl.accessToken = token;
 
-      map.on("load", () => {
-        map.setFog({ color: "rgba(10,12,20,0.9)", "high-color": "rgba(8,12,20,0.7)", "horizon-blend": 0.05 });
-
-        (Object.entries(TRADITIONS) as [TraditionKey, TraditionData][]).forEach(([key, t]) => {
-          const el = document.createElement("div");
-          el.style.cssText = `width:40px;height:40px;background:${t.color};border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:20px;cursor:pointer;border:2px solid rgba(255,255,255,0.25);box-shadow:0 0 14px ${t.color}70, 0 0 0 3px ${t.color}20;transition:transform 0.15s;`;
-          el.textContent = t.emoji;
-          el.title = t.label;
-          el.onmouseenter = () => { el.style.transform = "scale(1.15)"; };
-          el.onmouseleave = () => { el.style.transform = "scale(1)"; };
-          el.onclick = () => { selectTradition(key, map); };
-
-          new mgl.Marker({ element: el })
-            .setLngLat(t.coords as [number, number])
-            .addTo(map);
+        map = new mgl.Map({
+          container: mapRef.current,
+          style: "mapbox://styles/mapbox/dark-v11",
+          center: [20, 20],
+          zoom: 1.8,
         });
 
-        setMapLoaded(true);
-        mapInstanceRef.current = map;
-      });
-    });
+        map.on("error", (e: { error?: { message?: string } }) => {
+          console.error("[mapbox]", e.error?.message ?? e);
+        });
 
-    return () => map?.remove();
+        map.on("load", () => {
+          if (cancelled) return;
+          try { map.setFog({ color: "rgba(10,12,20,0.9)", "high-color": "rgba(8,12,20,0.7)", "horizon-blend": 0.05 }); } catch { /* fog optional */ }
+
+          (Object.entries(TRADITIONS) as [TraditionKey, TraditionData][]).forEach(([key, t]) => {
+            const el = document.createElement("div");
+            el.style.cssText = `width:40px;height:40px;background:${t.color};border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:20px;cursor:pointer;border:2px solid rgba(255,255,255,0.25);box-shadow:0 0 14px ${t.color}70, 0 0 0 3px ${t.color}20;transition:transform 0.15s;`;
+            el.textContent = t.emoji;
+            el.title = t.label;
+            el.onmouseenter = () => { el.style.transform = "scale(1.15)"; };
+            el.onmouseleave = () => { el.style.transform = "scale(1)"; };
+            el.onclick = () => { selectTradition(key, map); };
+
+            new mgl.Marker({ element: el })
+              .setLngLat([...t.coords] as [number, number])
+              .addTo(map);
+          });
+
+          setMapLoaded(true);
+          mapInstanceRef.current = map;
+        });
+      } catch (e) {
+        console.error("[alt-medicine] map init failed", e);
+        if (!cancelled) setMapError(e instanceof Error ? e.message : "Map failed to load");
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+      try { map?.remove(); } catch { /* ignore */ }
+    };
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -288,8 +312,8 @@ export default function AltMedicinePage() {
         <div style={{ flex: 1, position: "relative" }}>
           <div ref={mapRef} style={{ position: "absolute", inset: 0 }} />
           {!mapLoaded && (
-            <div style={{ position: "absolute", inset: 0, display: "flex", alignItems: "center", justifyContent: "center", background: "var(--bg)", color: "#64748b" }}>
-              Loading global healing map…
+            <div style={{ position: "absolute", inset: 0, display: "flex", alignItems: "center", justifyContent: "center", background: "var(--bg)", color: mapError ? "#f87171" : "#64748b", padding: 24, textAlign: "center" }}>
+              {mapError ?? "Loading global healing map…"}
             </div>
           )}
         </div>

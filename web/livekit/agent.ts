@@ -66,7 +66,7 @@ const set_urgency = llm.tool({
 });
 
 const finish_intake = llm.tool({
-  description: "End the voice intake session and submit the summary to the dashboard. Call this after 3-5 exchanges when you have enough information.",
+  description: "End the voice intake session and submit the summary to the dashboard. Call this after 3-5 exchanges when you have enough information, OR immediately when: (1) the user says they have no more information / nothing else to add, (2) the user asks you to make a decision, diagnosis, or analysis, (3) the user explicitly asks to end the session.",
   parameters: z.object({
     summary: z.string().describe("2-3 sentence summary of the user's concerns and suggested care path"),
     symptoms: z.array(z.string()).describe("Final list of key symptoms or concerns"),
@@ -108,6 +108,12 @@ TOOLS TO USE:
 - Call extract_symptoms as soon as you identify key symptoms.
 - Call set_urgency once you have a clear picture of severity.
 - Call finish_intake to end the session after gathering enough information.
+
+WHEN TO END IMMEDIATELY (call finish_intake right away, no more follow-up questions):
+- The user says they have no more information, nothing else to add, or "that's all I know".
+- The user asks you to make a decision, give a recommendation, or provide an analysis/diagnosis.
+- The user asks to end the session or says they are done.
+- Do NOT ask another follow-up question after the user indicates they are finished sharing.
 
 CONVERSATION STYLE:
 - Warm, calm, professional. Never clinical or cold.

@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { useSearchParams, useRouter } from "next/navigation";
-import { getRun, type RunStatus, type RoutingDecision } from "@/lib/api";
+import { getRun, listRuns, type RunStatus, type RoutingDecision, type RunSummary } from "@/lib/api";
 import { Suspense } from "react";
 
 const PATH_CONFIG = {
@@ -36,6 +36,108 @@ function RouteCard({ path, onClick, recommended }: { path: keyof typeof PATH_CON
       <div style={{ marginTop: 12, fontWeight: 700, fontSize: 16, color: "#e2e8f0" }}>{cfg.label}</div>
       <div style={{ marginTop: 4, fontSize: 13, color: "#64748b" }}>{cfg.desc}</div>
     </button>
+  );
+}
+
+const URGENCY_COLORS: Record<string, string> = {
+  emergency: "#f87171", urgent: "#fb923c", routine: "#22d3ee", wellness: "#34d399",
+};
+const PATH_ICONS: Record<string, string> = {
+  doctor: "🏥", pharmacy: "💊", mental_health: "🌊", alt_medicine: "🌿", self_care: "✨",
+};
+
+function PastIntakesList() {
+  const [runs, setRuns] = useState<RunSummary[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(false);
+  const router = useRouter();
+
+  useEffect(() => {
+    listRuns()
+      .then((data) => { if (Array.isArray(data)) setRuns(data); })
+      .catch(() => setError(true))
+      .finally(() => setLoading(false));
+  }, []);
+
+  return (
+    <div>
+      <div style={{ marginBottom: 24, display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+        <div>
+          <h2 style={{ margin: 0, fontSize: 20, fontWeight: 700 }}>Past Intakes</h2>
+          <p style={{ margin: "4px 0 0", color: "#64748b", fontSize: 14 }}>Select a session to view your care plan.</p>
+        </div>
+        <a href="/" className="btn-primary" style={{ textDecoration: "none", fontSize: 14, padding: "10px 20px" }}>
+          + New Intake
+        </a>
+      </div>
+
+      {loading && (
+        <div style={{ color: "#64748b", textAlign: "center", padding: 60 }}>Loading past intakes…</div>
+      )}
+
+      {!loading && error && (
+        <div style={{ color: "#f87171", textAlign: "center", padding: 60 }}>
+          Could not load past intakes — make sure the API server is running.
+        </div>
+      )}
+
+      {!loading && !error && runs.length === 0 && (
+        <div style={{ textAlign: "center", padding: 60 }}>
+          <div style={{ fontSize: 48, marginBottom: 16 }}>🩺</div>
+          <p style={{ color: "#64748b", marginBottom: 20 }}>No past intakes yet. Start a voice session to get your care plan.</p>
+          <a href="/" className="btn-primary" style={{ textDecoration: "none", display: "inline-block" }}>Start Voice Intake</a>
+        </div>
+      )}
+
+      {!loading && !error && runs.length > 0 && (
+        <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+          {runs.map((run) => {
+            const label = run.rd_summary ?? run.intake_summary ?? run.instruction ?? "Intake session";
+            const icon = PATH_ICONS[run.recommended_path ?? ""] ?? "🩺";
+            const color = URGENCY_COLORS[run.urgency ?? ""] ?? "#64748b";
+            const date = new Date(run.created_at).toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" });
+            return (
+              <button
+                key={run.id}
+                onClick={() => router.push(`/dashboard?run_id=${run.id}`)}
+                style={{
+                  background: "var(--surface)",
+                  border: "1px solid var(--border)",
+                  borderRadius: 14,
+                  padding: "16px 18px",
+                  cursor: "pointer",
+                  textAlign: "left",
+                  display: "flex",
+                  alignItems: "center",
+                  gap: 14,
+                  width: "100%",
+                  transition: "border-color 0.15s",
+                }}
+              >
+                <span style={{ fontSize: 24, flexShrink: 0 }}>{icon}</span>
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <div style={{ fontSize: 14, color: "#e2e8f0", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", fontWeight: 500 }}>
+                    {label.length > 90 ? label.slice(0, 90) + "…" : label}
+                  </div>
+                  <div style={{ fontSize: 12, color: "#64748b", marginTop: 3 }}>
+                    {date} · {(run.recommended_path ?? "pending").replace(/_/g, " ")}
+                  </div>
+                </div>
+                {run.urgency && (
+                  <span style={{
+                    fontSize: 11, fontWeight: 700, color, background: color + "20",
+                    borderRadius: 9999, padding: "3px 10px", whiteSpace: "nowrap", flexShrink: 0,
+                  }}>
+                    {run.urgency}
+                  </span>
+                )}
+                <span style={{ color: "#475569", fontSize: 14, flexShrink: 0 }}>→</span>
+              </button>
+            );
+          })}
+        </div>
+      )}
+    </div>
   );
 }
 
@@ -90,10 +192,8 @@ function DashboardContent() {
       {loading ? (
         <div style={{ color: "#64748b", textAlign: "center", padding: 80 }}>Loading your care plan…</div>
       ) : !run && !runId ? (
-        <div style={{ textAlign: "center", padding: 80 }}>
-          <p style={{ color: "#64748b" }}>No intake session found. Start a voice intake first.</p>
-          <a href="/" className="btn-primary" style={{ textDecoration: "none", display: "inline-block", marginTop: 16 }}>Start Intake</a>
-        </div>
+        <PastIntakesList />
+
       ) : (
         <>
           {/* Intake summary */}
