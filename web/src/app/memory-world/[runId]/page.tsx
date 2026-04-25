@@ -6,6 +6,15 @@ import { useOdyssey } from "@odysseyml/odyssey/react";
 import { credentialsFromDict } from "@odysseyml/odyssey";
 import { motion } from "motion/react";
 import LanguagePicker from "@/app/components/LanguagePicker";
+import {
+  SEED_MEMORIES,
+  loadUserMemories,
+  addMemory,
+  removeMemory,
+  fileToDataUrl,
+  resolveMemorySrc,
+  type Memory,
+} from "@/lib/memories";
 
 export default function MemoryWorldPage() {
   const { runId } = useParams<{ runId: string }>();
@@ -15,8 +24,12 @@ export default function MemoryWorldPage() {
   const [error, setError] = useState<string | null>(null);
   const [streaming, setStreaming] = useState(false);
   const [loading, setLoading] = useState(false);
+  const [userMemories, setUserMemories] = useState<Memory[]>([]);
+  const [selectedMemoryId, setSelectedMemoryId] = useState<string | null>(null);
   const videoRef = useRef<HTMLVideoElement>(null);
   const fileRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => { setUserMemories(loadUserMemories()); }, []);
 
   const [credentials, setCredentials] = useState<ReturnType<typeof credentialsFromDict> | null>(null);
 
@@ -87,7 +100,7 @@ export default function MemoryWorldPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [credentials]);
 
-  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
     if (file.type !== "image/jpeg" && file.type !== "image/png") {
@@ -96,9 +109,39 @@ export default function MemoryWorldPage() {
     }
     setError(null);
     setImageFile(file);
-    const reader = new FileReader();
-    reader.onload = (ev) => setImagePreview(ev.target?.result as string);
-    reader.readAsDataURL(file);
+    const dataUrl = await fileToDataUrl(file);
+    setImagePreview(dataUrl);
+    // Save to the user's library so it can be re-used
+    const next = addMemory({
+      id: `mem-${Date.now()}`,
+      title: file.name.replace(/\.[^.]+$/, "").slice(0, 40) || "My memory",
+      src: dataUrl,
+      createdAt: Date.now(),
+    });
+    setUserMemories(next);
+    setSelectedMemoryId(null);
+  };
+
+  const pickMemory = async (m: Memory) => {
+    setError(null);
+    setSelectedMemoryId(m.id);
+    setImagePreview(m.src);
+    try {
+      const file = await resolveMemorySrc(m.src);
+      setImageFile(file);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Failed to load memory");
+    }
+  };
+
+  const deleteMemory = (id: string, e: React.MouseEvent) => {
+    e.stopPropagation();
+    setUserMemories(removeMemory(id));
+    if (selectedMemoryId === id) {
+      setSelectedMemoryId(null);
+      setImageFile(null);
+      setImagePreview(null);
+    }
   };
 
   const relaunch = async () => {
@@ -190,20 +233,60 @@ export default function MemoryWorldPage() {
           </div>
 
           <div className="mb-5">
-            <label className="block text-sm text-[#6B7280] mb-2">Optional: seed image (JPEG/PNG)</label>
-            <div
-              onClick={() => !streaming && fileRef.current?.click()}
-              className={`border-2 border-dashed border-[#1F3A2E]/20 rounded-xl p-4 text-center transition-colors ${
-                streaming ? "opacity-50 cursor-default" : "cursor-pointer hover:border-[#1F3A2E]/40"
-              }`}
-            >
-              {imagePreview ? (
-                // eslint-disable-next-line @next/next/no-img-element
-                <img src={imagePreview} alt="preview" className="max-h-32 rounded-lg object-contain mx-auto" />
-              ) : (
-                <div className="text-[#6B7280] text-sm">Click to upload image → used as visual seed</div>
-              )}
+            <label className="block text-sm text-[#6B7280] mb-2">
+              Pick from your library, or upload a new memory
+            </label>
+
+            {/* Library grid */}
+            <div className="grid grid-cols-3 sm:grid-cols-4 gap-2 mb-3">
+              {[...userMemories, ...SEED_MEMORIES].map((m) => {
+                const isSel = selectedMemoryId === m.id;
+                return (
+                  <button
+                    key={m.id}
+                    type="button"
+                    onClick={() => !streaming && pickMemory(m)}
+                    disabled={streaming}
+                    className={`relative group aspect-square rounded-xl overflow-hidden border-2 transition-all ${
+                      isSel
+                        ? "border-[#1F3A2E]"
+                        : "border-[#1F3A2E]/15 hover:border-[#1F3A2E]/40"
+                    } ${streaming ? "opacity-50 cursor-default" : "cursor-pointer"}`}
+                  >
+                    {/* eslint-disable-next-line @next/next/no-img-element */}
+                    <img src={m.src} alt={m.title} className="w-full h-full object-cover" />
+                    <div className="absolute inset-0 flex items-end p-1.5 bg-gradient-to-t from-black/60 via-black/0 to-transparent">
+                      <span className="text-[10px] text-white font-medium leading-tight line-clamp-2">
+                        {m.title}
+                      </span>
+                    </div>
+                    {!m.seed && !streaming && (
+                      <span
+                        onClick={(e) => deleteMemory(m.id, e)}
+                        className="absolute top-1 right-1 w-5 h-5 rounded-full bg-black/60 text-white text-xs flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity"
+                        aria-label="Remove from library"
+                      >
+                        ×
+                      </span>
+                    )}
+                  </button>
+                );
+              })}
+
+              {/* Upload tile */}
+              <button
+                type="button"
+                onClick={() => !streaming && fileRef.current?.click()}
+                disabled={streaming}
+                className={`aspect-square rounded-xl border-2 border-dashed border-[#1F3A2E]/25 flex flex-col items-center justify-center text-center px-2 transition-colors ${
+                  streaming ? "opacity-50 cursor-default" : "cursor-pointer hover:border-[#1F3A2E]/50 hover:bg-[#1F3A2E]/5"
+                }`}
+              >
+                <span className="text-2xl text-[#1F3A2E]/60 leading-none mb-1">+</span>
+                <span className="text-[10px] text-[#6B7280] leading-tight">Upload new</span>
+              </button>
             </div>
+
             <input
               ref={fileRef}
               type="file"
@@ -211,6 +294,20 @@ export default function MemoryWorldPage() {
               className="hidden"
               onChange={handleFileChange}
             />
+
+            {imagePreview && (
+              <div className="text-xs text-[#6B7280] mt-1">
+                Selected as visual seed.{" "}
+                <button
+                  type="button"
+                  onClick={() => { setImageFile(null); setImagePreview(null); setSelectedMemoryId(null); }}
+                  disabled={streaming}
+                  className="text-[#1F3A2E] underline disabled:opacity-50"
+                >
+                  Clear
+                </button>
+              </div>
+            )}
           </div>
 
           <div className="flex gap-3">
