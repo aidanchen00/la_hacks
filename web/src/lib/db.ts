@@ -286,8 +286,9 @@ export function buildKGData(): KGData {
   };
 
   // 1. Real intake runs — the only "session"-type node from now on.
-  //    Limit to runs from 2026-04-24 onward so the graph reflects current demo data.
-  const runs = db.prepare(`
+  //    Limit to runs from 2026-04-24 onward; drop any run that produced no
+  //    summary at all (so the graph isn't polluted with empty placeholders).
+  const rawRuns = db.prepare(`
     SELECT r.id, r.user_id, r.created_at, r.instruction, r.intake_summary,
            rd.urgency, rd.recommended_path, rd.summary AS rd_summary
     FROM runs r
@@ -301,13 +302,16 @@ export function buildKGData(): KGData {
     rd_summary: string | null;
   }[];
 
+  const runs = rawRuns.filter((r) => {
+    const sum = (r.rd_summary ?? r.intake_summary ?? "").trim();
+    return sum.length > 0;
+  });
+
   for (const r of runs) {
     const date = r.created_at.slice(5, 10);
     const path = (r.recommended_path ?? "intake").replace(/_/g, " ");
     const sumText = (r.rd_summary ?? r.intake_summary ?? "").trim();
-    const description = sumText
-      ? sumText.length > 220 ? sumText.slice(0, 220) + "…" : sumText
-      : "Intake recorded; no summary yet.";
+    const description = sumText.length > 220 ? sumText.slice(0, 220) + "…" : sumText;
     addNode({
       id: `run-${r.id}`,
       name: `${path} · ${date}`,
