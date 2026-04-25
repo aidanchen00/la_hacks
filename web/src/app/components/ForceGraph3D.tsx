@@ -14,6 +14,8 @@ export interface GraphNode {
   name: string;
   type: string;
   val?: number;
+  description?: string;
+  meta?: Record<string, string | number | undefined>;
 }
 
 export interface GraphData {

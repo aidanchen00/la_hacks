@@ -222,10 +222,27 @@ export default function GraphPage() {
                     {selected.name}
                   </div>
 
-                  <p className="text-[#6B7280] text-xs leading-relaxed mb-4">
-                    {TYPE_DESCRIPTIONS[selected.type] ??
+                  <p className="text-[#3D3D3D] text-xs leading-relaxed mb-2">
+                    {selected.description ??
+                      TYPE_DESCRIPTIONS[selected.type] ??
                       "A node in your wellness knowledge graph."}
                   </p>
+
+                  {selected.meta && (
+                    <div className="flex flex-wrap gap-1.5 mb-4">
+                      {Object.entries(selected.meta)
+                        .filter(([, v]) => v !== undefined && v !== "" && v !== 0)
+                        .slice(0, 6)
+                        .map(([k, v]) => (
+                          <span
+                            key={k}
+                            className="text-[10px] uppercase tracking-wider px-2 py-0.5 rounded-full bg-[#EFEAE0] text-[#3D3D3D] border border-[#1F3A2E]/10"
+                          >
+                            <span className="text-[#6B7280]">{k}:</span> {String(v)}
+                          </span>
+                        ))}
+                    </div>
+                  )}
 
                   {selectedDetails && selectedDetails.linkCount > 0 && (
                     <>

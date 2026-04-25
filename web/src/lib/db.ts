@@ -262,64 +262,122 @@ export function getRecentRuns(limit = 20): RunSummary[] {
 // Knowledge Graph query
 // ---------------------------------------------------------------------------
 
+export interface KGNode {
+  id: string;
+  name: string;
+  type: string;
+  val?: number;
+  description?: string;
+  meta?: Record<string, string | number | undefined>;
+}
+
 export interface KGData {
-  nodes: { id: string; name: string; type: string; val?: number }[];
+  nodes: KGNode[];
   links: { source: string; target: string; weight?: number }[];
 }
 
 export function buildKGData(): KGData {
   const db = getDb();
   const links: KGData["links"] = [];
-  const nodeSet = new Set<string>();
-  const nodeMap = new Map<string, KGData["nodes"][0]>();
+  const nodeMap = new Map<string, KGNode>();
 
-  const addNode = (n: KGData["nodes"][0]) => {
+  const addNode = (n: KGNode) => {
     if (!nodeMap.has(n.id)) nodeMap.set(n.id, n);
-    nodeSet.add(n.id);
   };
 
-  // 1. Intake runs (navigable — clicking goes to dashboard)
+  // 1. Real intake runs — the only "session"-type node from now on.
   const runs = db.prepare(`
-    SELECT r.id, r.created_at, rd.urgency, rd.recommended_path
+    SELECT r.id, r.user_id, r.created_at, r.intake_summary,
+           rd.urgency, rd.recommended_path, rd.summary AS rd_summary
     FROM runs r
-    INNER JOIN routing_decisions rd ON rd.run_id = r.id
-    ORDER BY r.created_at DESC LIMIT 12
-  `).all() as { id: string; created_at: string; urgency: string; recommended_path: string }[];
+    LEFT JOIN routing_decisions rd ON rd.run_id = r.id
+    ORDER BY r.created_at DESC LIMIT 24
+  `).all() as {
+    id: string; user_id: number | null; created_at: string;
+    intake_summary: string | null; urgency: string | null;
+    recommended_path: string | null; rd_summary: string | null;
+  }[];
 
   for (const r of runs) {
     const date = r.created_at.slice(5, 10);
-    addNode({ id: `run-${r.id}`, name: `${(r.recommended_path ?? "intake").replace(/_/g, " ")} · ${date}`, type: "session", val: 4 });
+    const path = (r.recommended_path ?? "intake").replace(/_/g, " ");
+    const sumText = (r.rd_summary ?? r.intake_summary ?? "").trim();
+    const description = sumText
+      ? sumText.length > 220 ? sumText.slice(0, 220) + "…" : sumText
+      : "Intake recorded; no summary yet.";
+    addNode({
+      id: `run-${r.id}`,
+      name: `${path} · ${date}`,
+      type: "session",
+      val: 4,
+      description,
+      meta: {
+        urgency: r.urgency ?? "wellness",
+        path,
+        date: r.created_at.slice(0, 10),
+      },
+    });
   }
 
-  // 2. Voice sessions linked to symptoms
+  // 2. Symptoms — pull every user_symptoms row, link to all of that user's runs.
   const userSymptoms = db.prepare(`
-    SELECT us.session_id, us.symptom_id, s.name AS sym_name, s.mention_count
+    SELECT us.user_id, us.symptom_id, us.session_id, us.mention_count AS user_count,
+           s.name AS sym_name, s.category AS sym_category, s.mention_count AS global_count
     FROM user_symptoms us
     JOIN symptoms s ON s.id = us.symptom_id
-    WHERE us.session_id IS NOT NULL
-    LIMIT 120
-  `).all() as { session_id: number; symptom_id: number; sym_name: string; mention_count: number }[];
+    LIMIT 200
+  `).all() as {
+    user_id: number; symptom_id: number; session_id: number | null;
+    user_count: number; sym_name: string; sym_category: string | null; global_count: number;
+  }[];
 
-  const sessionIds = [...new Set(userSymptoms.map(u => u.session_id))];
-  for (const sid of sessionIds) {
-    addNode({ id: `session-${sid}`, name: `Session ${sid}`, type: "session", val: 3 });
+  // Build user_id → list of run_ids map (chronological)
+  const userRuns = new Map<number, { id: string; created_at: string }[]>();
+  for (const r of runs) {
+    if (r.user_id == null) continue;
+    if (!userRuns.has(r.user_id)) userRuns.set(r.user_id, []);
+    userRuns.get(r.user_id)!.push({ id: r.id, created_at: r.created_at });
   }
+
+  const symptomToRuns = new Map<number, Set<string>>();
   for (const us of userSymptoms) {
-    addNode({ id: `symptom-${us.symptom_id}`, name: us.sym_name, type: "symptom", val: Math.max(1, Math.min(4, us.mention_count)) });
-    links.push({ source: `session-${us.session_id}`, target: `symptom-${us.symptom_id}`, weight: 1 });
+    const symId = `symptom-${us.symptom_id}`;
+    addNode({
+      id: symId,
+      name: us.sym_name,
+      type: "symptom",
+      val: Math.max(2, Math.min(5, Math.ceil(us.global_count / 2))),
+      description: `${us.sym_category ? us.sym_category[0].toUpperCase() + us.sym_category.slice(1) + " symptom. " : ""}Reported ${us.user_count} time${us.user_count === 1 ? "" : "s"} by this user; ${us.global_count} mention${us.global_count === 1 ? "" : "s"} across all users.`,
+      meta: {
+        category: us.sym_category ?? "general",
+        userCount: us.user_count,
+        globalCount: us.global_count,
+      },
+    });
+    // Link to every run owned by this user
+    const runsForUser = userRuns.get(us.user_id) ?? [];
+    if (!symptomToRuns.has(us.symptom_id)) symptomToRuns.set(us.symptom_id, new Set());
+    for (const r of runsForUser) {
+      links.push({ source: `run-${r.id}`, target: symId, weight: 1 });
+      symptomToRuns.get(us.symptom_id)!.add(r.id);
+    }
   }
 
-  // 3. Conditions with their symptom links
-  const conditions = db.prepare("SELECT id, name, related_symptom_ids FROM conditions LIMIT 20").all() as { id: number; name: string; related_symptom_ids: string }[];
+  // 3. Conditions linked to symptoms already in graph
+  const conditions = db.prepare("SELECT id, name, related_symptom_ids FROM conditions LIMIT 30").all() as { id: number; name: string; related_symptom_ids: string }[];
   for (const c of conditions) {
     let relIds: number[] = [];
     try { relIds = JSON.parse(c.related_symptom_ids); } catch { /* empty */ }
-
-    // Only add condition if at least one of its symptoms is already in the graph
-    const linkedSymptoms = relIds.filter(sid => nodeSet.has(`symptom-${sid}`));
+    const linkedSymptoms = relIds.filter(sid => nodeMap.has(`symptom-${sid}`));
     if (linkedSymptoms.length === 0) continue;
-
-    addNode({ id: `condition-${c.id}`, name: c.name, type: "condition", val: 3 });
+    addNode({
+      id: `condition-${c.id}`,
+      name: c.name,
+      type: "condition",
+      val: 3,
+      description: `Possible underlying condition. Connected to ${linkedSymptoms.length} symptom${linkedSymptoms.length === 1 ? "" : "s"} in your graph.`,
+      meta: { linkedSymptoms: linkedSymptoms.length },
+    });
     for (const sid of linkedSymptoms) {
       links.push({ source: `condition-${c.id}`, target: `symptom-${sid}`, weight: 1 });
     }
@@ -335,6 +393,21 @@ export function buildKGData(): KGData {
         links.push({ source: `run-${r.id}`, target: cnode.id, weight: 2 });
         break;
       }
+    }
+  }
+
+  // 5. Safety net: any run that still has zero links gets connected to the
+  //    most-recent run that does have links, so nothing floats off-screen.
+  const linkedSet = new Set<string>();
+  for (const l of links) {
+    linkedSet.add(typeof l.source === "string" ? l.source : (l.source as { id: string }).id);
+    linkedSet.add(typeof l.target === "string" ? l.target : (l.target as { id: string }).id);
+  }
+  const orphanRuns = runs.filter(r => !linkedSet.has(`run-${r.id}`));
+  const anchor = runs.find(r => linkedSet.has(`run-${r.id}`));
+  if (anchor) {
+    for (const r of orphanRuns) {
+      links.push({ source: `run-${r.id}`, target: `run-${anchor.id}`, weight: 0.5 });
     }
   }
 
