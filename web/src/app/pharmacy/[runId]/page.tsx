@@ -110,6 +110,26 @@ export default function PharmacyPage() {
     return () => { if (browserPollRef.current) clearInterval(browserPollRef.current); };
   }, [started, sessions]);
 
+  // Stop active BrowserUse sessions on unmount or tab close to free quota
+  useEffect(() => {
+    const stop = () => {
+      const ids = sessions.map((s) => s.sessionId).filter(Boolean);
+      if (!ids.length) return;
+      const body = JSON.stringify({ sessionIds: ids });
+      // sendBeacon survives tab close; fall back to fetch otherwise
+      if (typeof navigator !== "undefined" && navigator.sendBeacon) {
+        navigator.sendBeacon("/api/browser/stop", new Blob([body], { type: "application/json" }));
+      } else {
+        fetch("/api/browser/stop", { method: "POST", headers: { "Content-Type": "application/json" }, body }).catch(() => {});
+      }
+    };
+    window.addEventListener("beforeunload", stop);
+    return () => {
+      window.removeEventListener("beforeunload", stop);
+      stop();
+    };
+  }, [sessions]);
+
   const statusDot = (s: SessionInfo) =>
     s.done ? "#16A34A" : s.status === "error" ? "#DC2626" : "#D97706";
 
