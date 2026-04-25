@@ -103,7 +103,7 @@ export default function MemoryWorldPage() {
       </div>
 
       <p style={{ color: "#64748b", marginBottom: 28, lineHeight: 1.6, maxWidth: 600 }}>
-        Describe a calming memory or place, optionally pick a photo from your library or upload a new one (JPEG/PNG), and CareFlow will generate an immersive video experience tailored to help you relax and restore.
+        Describe a calming memory or place, optionally pick a photo from your library or upload a new one (JPEG/PNG), and Prana will generate an immersive video experience tailored to help you relax and restore.
       </p>
 
       {!videoUrl ? (
@@ -189,7 +189,7 @@ export default function MemoryWorldPage() {
             <button className="btn-primary" onClick={() => { setVideoUrl(null); setImageDataUrl(null); setImagePreview(null); }}>
               Generate Another
             </button>
-            <a href={videoUrl} download="careflow-memory-world.mp4" style={{ padding: "12px 20px", borderRadius: 9999, border: "1px solid var(--border)", color: "#94a3b8", fontSize: 14, textDecoration: "none", cursor: "pointer" }}>
+            <a href={videoUrl} download="prana-memory-world.mp4" style={{ padding: "12px 20px", borderRadius: 9999, border: "1px solid var(--border)", color: "#94a3b8", fontSize: 14, textDecoration: "none", cursor: "pointer" }}>
               Download Video
             </a>
           </div>

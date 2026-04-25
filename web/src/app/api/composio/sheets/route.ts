@@ -27,9 +27,9 @@ export async function POST(req: NextRequest) {
       userId: entityId,
       arguments: {
         spreadsheet_id: sheetsId,
-        ranges: ["CareFlow Intakes!A:J"],
+        ranges: ["Prana Intakes!A:J"],
         value_input_option: "USER_ENTERED",
-        data: [{ range: "CareFlow Intakes!A:J", values: [values] }],
+        data: [{ range: "Prana Intakes!A:J", values: [values] }],
       },
       dangerouslySkipVersionCheck: true,
     });
