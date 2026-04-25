@@ -19,7 +19,7 @@ import {
 
 export default function MemoryWorldPage() {
   const { runId } = useParams<{ runId: string }>();
-  const [prompt, setPrompt] = useState("A peaceful beach at golden hour, warm waves, serene and calming");
+  const [prompt, setPrompt] = useState("");
   const [imageFile, setImageFile] = useState<File | null>(null);
   const [imagePreview, setImagePreview] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -46,29 +46,37 @@ export default function MemoryWorldPage() {
     },
   });
 
-  const fetchCredentials = useCallback(async () => {
+  const stopStream = useCallback(async () => {
+    try { await odyssey.endStream(); } catch { /* ignore */ }
+    try { odyssey.disconnect(); } catch { /* ignore */ }
+    setStreaming(false);
+    if (videoRef.current) videoRef.current.srcObject = null;
+    setCredentials(null);
+  }, [odyssey]);
+
+  // Single click handler: shut down any prior stream from this client to free
+  // the Odyssey slot, then mint fresh credentials + connect + start.
+  const startStream = async () => {
     setError(null);
     setLoading(true);
     try {
+      // 1. Cleanup: end + disconnect any active stream from this page
+      try { await odyssey.endStream(); } catch { /* may not be running */ }
+      try { odyssey.disconnect(); } catch { /* may not be connected */ }
+
+      // 2. Fresh credentials
       const res = await fetch("/api/odyssey", { method: "POST" });
       const data = await res.json();
       if (data.error) throw new Error(data.error);
-      setCredentials(credentialsFromDict(data.credentials));
-    } catch (e) {
-      setError(e instanceof Error ? e.message : "Failed to connect to Odyssey");
-    } finally {
-      setLoading(false);
-    }
-  }, []);
+      const creds = credentialsFromDict(data.credentials);
+      setCredentials(creds);
 
-  const startStream = async () => {
-    if (!credentials) return;
-    setError(null);
-    setLoading(true);
-    try {
+      // 3. Connect + start
       await odyssey.connect();
       await odyssey.startStream({
-        prompt: `Calming, healing world: ${prompt}`,
+        prompt: prompt.trim()
+          ? `Calming, healing world: ${prompt}`
+          : DEFAULT_MEMORY_PROMPT,
         portrait: false,
         ...(imageFile ? { image: imageFile } : {}),
       });
@@ -80,26 +88,18 @@ export default function MemoryWorldPage() {
     }
   };
 
-  const stopStream = async () => {
-    try { await odyssey.endStream(); } catch { /* ignore */ }
-    odyssey.disconnect();
-    setStreaming(false);
-    if (videoRef.current) videoRef.current.srcObject = null;
-    setCredentials(null);
-  };
-
+  // Best-effort cleanup on unmount + tab close so we don't orbit the slot.
   useEffect(() => {
-    fetchCredentials();
-    return () => { odyssey.disconnect(); };
+    const cleanup = () => {
+      try { odyssey.disconnect(); } catch { /* ignore */ }
+    };
+    window.addEventListener("beforeunload", cleanup);
+    return () => {
+      window.removeEventListener("beforeunload", cleanup);
+      cleanup();
+    };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
-
-  useEffect(() => {
-    if (credentials && !odyssey.isConnected && !streaming) {
-      startStream();
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [credentials]);
 
   const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -150,10 +150,8 @@ export default function MemoryWorldPage() {
     }
   };
 
-  const relaunch = async () => {
-    await stopStream();
-    await fetchCredentials();
-  };
+  // Single-button entry point — startStream already does cleanup-then-start
+  const relaunch = startStream;
 
   const statusLabel = () => {
     if (streaming) return "● Live";
