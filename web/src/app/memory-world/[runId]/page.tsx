@@ -3,7 +3,7 @@
 import { useEffect, useRef, useState, useCallback } from "react";
 import { useParams } from "next/navigation";
 import { useOdyssey } from "@odysseyml/odyssey/react";
-import { credentialsFromDict } from "@odysseyml/odyssey";
+import { credentialsFromDict, Odyssey } from "@odysseyml/odyssey";
 import { motion } from "motion/react";
 import LanguagePicker from "@/app/components/LanguagePicker";
 import {
@@ -16,6 +16,60 @@ import {
   resolveMemorySrc,
   type Memory,
 } from "@/lib/memories";
+
+// ---------------------------------------------------------------------------
+// LocalStorage tracking of recent Odyssey credentials so a fresh page-load
+// can reach back to prior streams and tear them down (Odyssey caps concurrent
+// streams per account; tab reloads otherwise leak slots).
+// ---------------------------------------------------------------------------
+
+const ODY_KEY = "prana.odyssey.active_creds.v1";
+
+interface StoredCreds {
+  raw: Record<string, unknown>;
+  expiresAt: number;
+}
+
+function loadStoredOdysseyCreds(): StoredCreds[] {
+  if (typeof window === "undefined") return [];
+  try {
+    const raw = localStorage.getItem(ODY_KEY);
+    if (!raw) return [];
+    const arr = JSON.parse(raw) as StoredCreds[];
+    return Array.isArray(arr) ? arr.filter((c) => c.expiresAt > Date.now()) : [];
+  } catch { return []; }
+}
+
+function saveOdysseyCreds(c: StoredCreds): void {
+  if (typeof window === "undefined") return;
+  try {
+    const next = [...loadStoredOdysseyCreds(), c];
+    localStorage.setItem(ODY_KEY, JSON.stringify(next));
+  } catch { /* quota or disabled */ }
+}
+
+function clearOdysseyCreds(): void {
+  if (typeof window === "undefined") return;
+  try { localStorage.removeItem(ODY_KEY); } catch { /* ignore */ }
+}
+
+/** Reconnect to every still-valid prior session and end it; returns count killed. */
+async function reapPriorOdysseyStreams(): Promise<number> {
+  const stored = loadStoredOdysseyCreds();
+  if (!stored.length) return 0;
+  let killed = 0;
+  for (const s of stored) {
+    try {
+      const reaper = new Odyssey({});
+      await reaper.connectWithCredentials(credentialsFromDict(s.raw));
+      try { await reaper.endStream(); } catch { /* may not be running */ }
+      reaper.disconnect();
+      killed++;
+    } catch { /* token expired or session already gone — nothing to do */ }
+  }
+  clearOdysseyCreds();
+  return killed;
+}
 
 export default function MemoryWorldPage() {
   const { runId } = useParams<{ runId: string }>();
@@ -52,24 +106,50 @@ export default function MemoryWorldPage() {
     setStreaming(false);
     if (videoRef.current) videoRef.current.srcObject = null;
     setCredentials(null);
+    clearOdysseyCreds();
   }, [odyssey]);
 
-  // Single click handler: shut down any prior stream from this client to free
-  // the Odyssey slot, then mint fresh credentials + connect + start.
+  const reapStaleStreams = async () => {
+    setError(null);
+    setLoading(true);
+    try {
+      const killed = await reapPriorOdysseyStreams();
+      setError(killed > 0
+        ? `Reaped ${killed} prior stream${killed === 1 ? "" : "s"}. Try Start Livestream again.`
+        : "No reapable streams found. If you still see active streams in the Odyssey dashboard, they were started from a different browser/device — wait for them to time out or end them manually."
+      );
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Reap failed");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // Single click handler: shut down any prior stream (this tab AND saved
+  // sessions from previous reloads) to free the Odyssey slot, then mint
+  // fresh credentials + connect + start.
   const startStream = async () => {
     setError(null);
     setLoading(true);
     try {
-      // 1. Cleanup: end + disconnect any active stream from this page
+      // 1a. Cleanup: end + disconnect any active stream from this page
       try { await odyssey.endStream(); } catch { /* may not be running */ }
       try { odyssey.disconnect(); } catch { /* may not be connected */ }
+
+      // 1b. Reap any sessions left over from prior reloads on this browser
+      const reaped = await reapPriorOdysseyStreams();
+      if (reaped > 0) console.info(`[odyssey] reaped ${reaped} stale stream(s)`);
 
       // 2. Fresh credentials
       const res = await fetch("/api/odyssey", { method: "POST" });
       const data = await res.json();
       if (data.error) throw new Error(data.error);
-      const creds = credentialsFromDict(data.credentials);
+      const credsRaw = data.credentials as Record<string, unknown>;
+      const creds = credentialsFromDict(credsRaw);
       setCredentials(creds);
+      // Track for future reaping. Default 15-min TTL if expiresIn missing.
+      const expiresInSec = Number(credsRaw.expiresIn ?? credsRaw.expires_in ?? 900);
+      saveOdysseyCreds({ raw: credsRaw, expiresAt: Date.now() + expiresInSec * 1000 });
 
       // 3. Connect + start
       await odyssey.connect();
@@ -218,8 +298,16 @@ export default function MemoryWorldPage() {
         </motion.div>
 
         {error && (
-          <div className="bg-[#FEE2E2] border border-[#DC2626]/20 rounded-2xl px-4 py-3 mb-4 text-sm text-[#DC2626]">
-            {error}
+          <div className="bg-[#FEE2E2] border border-[#DC2626]/20 rounded-2xl px-4 py-3 mb-4 text-sm text-[#DC2626] flex items-start justify-between gap-3">
+            <span className="flex-1">{error}</span>
+            <button
+              type="button"
+              onClick={reapStaleStreams}
+              disabled={loading}
+              className="text-[#1F3A2E] underline whitespace-nowrap hover:opacity-70 disabled:opacity-50"
+            >
+              Reset stale streams
+            </button>
           </div>
         )}
 
