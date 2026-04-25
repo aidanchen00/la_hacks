@@ -10,6 +10,24 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: "sessionIds required" }, { status: 400 });
   }
 
+  // Steel backend — forward to the FastAPI poller (which holds in-memory state
+  // for browser-use Agents driving Steel sessions).
+  if (process.env.BROWSER_BACKEND === "steel") {
+    const fastapiBase = process.env.FASTAPI_BASE_URL ?? "http://localhost:8000";
+    try {
+      const r = await fetch(`${fastapiBase}/browser-local/status`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ sessionIds }),
+      });
+      if (r.ok) return NextResponse.json(await r.json());
+    } catch { /* fall through to error */ }
+    return NextResponse.json({ sessions: sessionIds.map(({ agent, sessionId }) => ({
+      agent, sessionId, status: "error", done: true, output: null,
+      error: "Steel backend unreachable",
+    })) });
+  }
+
   const client = new BrowserUse({ apiKey: process.env.BROWSER_USE_API_KEY });
 
   // BuAgentSessionStatus = "created" | "idle" | "running" | "stopped" | "timed_out" | "error"

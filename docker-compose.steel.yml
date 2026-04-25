@@ -1,0 +1,27 @@
+# Steel Browser — self-hosted Chromium with hosted live-viewer URLs.
+# Drop-in replacement for the BrowserUse cloud SDK's `liveUrl` shape, used by
+# api/browser_local.py + the Next.js /api/browser routes when
+# BROWSER_BACKEND=steel.
+#
+# Run:
+#   docker compose -f docker-compose.steel.yml up -d
+#
+# Stop:
+#   docker compose -f docker-compose.steel.yml down
+#
+# Once running, visit http://localhost:5173 for the Steel UI (active sessions,
+# session viewer, manual debug). The API is on :3000.
+
+services:
+  steel:
+    image: ghcr.io/steel-dev/steel-browser-api:latest
+    container_name: steel-browser
+    restart: unless-stopped
+    ports:
+      - "3000:3000"     # API + WebSocket / CDP
+      - "5173:5173"     # built-in Steel UI
+    shm_size: 2gb       # Chromium needs >64MB shared memory or it OOM-crashes
+    environment:
+      # Steel binds its API to all interfaces by default; override only if needed.
+      - HOST=0.0.0.0
+      - PORT=3000

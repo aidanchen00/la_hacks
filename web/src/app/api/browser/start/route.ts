@@ -138,6 +138,32 @@ export async function POST(request: NextRequest) {
   }
 
   const sites = mode === "doctor" ? DOCTOR_SITES : PHARMACY_SITES;
+
+  // Steel + local browser-use backend (self-hosted, no per-task quota).
+  // Forward to the FastAPI router at /browser-local/start.
+  if (process.env.BROWSER_BACKEND === "steel") {
+    const fastapiBase = process.env.FASTAPI_BASE_URL ?? "http://localhost:8000";
+    try {
+      const r = await fetch(`${fastapiBase}/browser-local/start`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ mode, query, location }),
+      });
+      if (!r.ok) {
+        const text = await r.text().catch(() => "");
+        console.warn(`[browser/start] steel backend ${r.status}: ${text} — falling back to mocks`);
+        const sessions = sites.map((site) => buildMockSession(site, mode));
+        return NextResponse.json({ mode, sessions, started: sessions.length, mock: true, backend: "steel-failed" });
+      }
+      const data = await r.json();
+      return NextResponse.json(data);
+    } catch (e) {
+      console.warn(`[browser/start] steel unreachable (${e instanceof Error ? e.message : e}) — mocks`);
+      const sessions = sites.map((site) => buildMockSession(site, mode));
+      return NextResponse.json({ mode, sessions, started: sessions.length, mock: true, backend: "steel-unreachable" });
+    }
+  }
+
   const forceMock = process.env.MOCK_BROWSER_USE === "1" || !process.env.BROWSER_USE_API_KEY;
 
   // Mock mode: skip the SDK entirely, return fixture sessions.

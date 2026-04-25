@@ -74,6 +74,18 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+# Local browser backend (Steel Browser + browser-use). Optional — only mounted if
+# the dependencies are installed. Activate from the frontend with
+# BROWSER_BACKEND=steel.
+try:
+    from api.browser_local import router as browser_local_router
+    app.include_router(browser_local_router)
+    logger.info("[browser-local] Steel + browser-use backend mounted at /browser-local")
+except Exception as e:
+    logging.getLogger(__name__).warning(
+        f"[browser-local] not mounted ({e}). pip install browser-use langchain-openai to enable."
+    )
+
 
 # ---------------------------------------------------------------------------
 # Health
