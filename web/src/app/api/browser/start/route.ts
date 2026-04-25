@@ -94,10 +94,10 @@ function buildPharmacyTask(site: string, query: string): string {
 
 function buildMockSession(agent: string, mode: BrowserMode) {
   const id = `mock_${agent.toLowerCase()}_${Date.now().toString(36)}`;
-  const liveUrl = mode === "doctor"
-    ? { ZocDoc: "https://www.zocdoc.com", Healthgrades: "https://www.healthgrades.com", Solv: "https://www.solvhealth.com" }[agent]
-    : { CVS: "https://www.cvs.com", Walgreens: "https://www.walgreens.com", GoodRx: "https://www.goodrx.com" }[agent];
-  return { agent, sessionId: id, liveUrl: liveUrl ?? "", status: "completed", mock: true };
+  // Empty liveUrl on purpose — public sites block iframe embedding via
+  // X-Frame-Options, so the UI renders a "Demo mode" placeholder instead.
+  // done: true so the status poller skips it (no real session to fetch).
+  return { agent, sessionId: id, liveUrl: "", status: "completed", done: true, mock: true, mode };
 }
 
 function isQuotaError(err: unknown): boolean {

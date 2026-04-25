@@ -20,6 +20,10 @@ export async function POST(request: NextRequest) {
 
   const statuses = await Promise.all(
     sessionIds.map(async ({ agent, sessionId }) => {
+      // Mock sessions never hit BrowserUse — pretend they're already complete
+      if (sessionId.startsWith("mock_")) {
+        return { agent, sessionId, status: "completed", output: null, done: true, mock: true };
+      }
       try {
         const session = await client.sessions.get(sessionId);
         const status = session.status as string;

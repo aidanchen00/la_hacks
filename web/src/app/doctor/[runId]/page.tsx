@@ -25,6 +25,7 @@ interface SessionInfo {
   error?: string;
   done?: boolean;
   output?: string | null;
+  mock?: boolean;
 }
 
 function parseProviders(output: string | null | undefined): ProviderResult[] {
@@ -505,7 +506,17 @@ export default function DoctorPage() {
                     <span className="font-medium text-[#1F3A2E] text-sm">{s.agent}</span>
                     <span className="ml-auto text-xs text-[#6B7280]">{statusLabel(s)}</span>
                   </div>
-                  {s.liveUrl ? (
+                  {s.mock ? (
+                    <div className="h-[340px] flex flex-col items-center justify-center text-center px-4 bg-[#F4F1EA]">
+                      <span className="text-[10px] font-bold uppercase tracking-widest px-2.5 py-1 rounded-full bg-[#FEF3C7] text-[#D97706] mb-3">
+                        Demo Mode
+                      </span>
+                      <p className="text-[#1F3A2E] text-sm font-medium mb-1">{s.agent}</p>
+                      <p className="text-[#6B7280] text-xs leading-relaxed max-w-[220px]">
+                        BrowserUse free-tier task quota reached. Showing fixture results so the demo continues.
+                      </p>
+                    </div>
+                  ) : s.liveUrl ? (
                     <iframe
                       src={s.liveUrl}
                       className="w-full border-none"
