@@ -337,7 +337,7 @@ function TextChatView({
   };
 
   return (
-    <div className="flex flex-col h-full bg-[#F4F1EA] px-4 sm:px-6 py-6 sm:py-8">
+    <div className="flex flex-col bg-[#F4F1EA] px-4 sm:px-6 pt-6 sm:pt-8" style={{ height: "100dvh" }}>
       {/* Chat area */}
       <div className="w-full max-w-md mx-auto flex flex-col gap-3 flex-1 min-h-0">
         <div className="flex-1 overflow-y-auto space-y-3 pr-1">
@@ -368,8 +368,11 @@ function TextChatView({
           <div ref={bottomRef} />
         </div>
 
-        {/* Input row */}
-        <div className="flex gap-2 pt-2 items-end">
+        {/* Input row — sticks above keyboard on mobile via dvh layout */}
+        <div
+          className="flex gap-2 pt-2 items-end pb-3"
+          style={{ paddingBottom: "max(0.75rem, env(safe-area-inset-bottom, 0.75rem))" }}
+        >
           <textarea
             value={input}
             rows={1}
