@@ -294,6 +294,28 @@ function TextChatView({
   onIntakeCompleteRef.current = onIntakeComplete;
   const doneRef = useRef(false);
 
+  // Track visual viewport so the container tracks the keyboard on iOS
+  const [vpHeight, setVpHeight] = useState<number | null>(null);
+  const [vpTop, setVpTop] = useState(0);
+
+  useEffect(() => {
+    const vv = window.visualViewport;
+    if (!vv) return;
+    const update = () => {
+      setVpHeight(vv.height);
+      setVpTop(vv.offsetTop);
+      // Keep newest message in view when keyboard resizes
+      bottomRef.current?.scrollIntoView({ behavior: "instant" });
+    };
+    update();
+    vv.addEventListener("resize", update);
+    vv.addEventListener("scroll", update);
+    return () => {
+      vv.removeEventListener("resize", update);
+      vv.removeEventListener("scroll", update);
+    };
+  }, []);
+
   const callApi = useCallback(async (msgs: { role: "user" | "assistant"; content: string }[]) => {
     setThinking(true);
     try {
@@ -327,18 +349,6 @@ function TextChatView({
     bottomRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages, thinking]);
 
-  // When the keyboard opens/closes (visualViewport resizes), scroll to the
-  // bottom so the most recent message stays visible above the input.
-  useEffect(() => {
-    const vv = window.visualViewport;
-    if (!vv) return;
-    const onResize = () => {
-      bottomRef.current?.scrollIntoView({ behavior: "instant" });
-    };
-    vv.addEventListener("resize", onResize);
-    return () => vv.removeEventListener("resize", onResize);
-  }, []);
-
   const handleSend = async () => {
     if (!input.trim() || thinking) return;
     const userMsg = { role: "user" as const, content: input.trim() };
@@ -349,10 +359,30 @@ function TextChatView({
   };
 
   return (
-    <div className="flex flex-col bg-[#F4F1EA] px-4 sm:px-6 pt-6 sm:pt-8 overflow-hidden" style={{ height: "100dvh" }}>
-      {/* Chat area */}
-      <div className="w-full max-w-md mx-auto flex flex-col gap-3 flex-1 min-h-0">
-        <div className="flex-1 overflow-y-auto space-y-3 pr-1">
+    // position:fixed + visualViewport tracking = immune to iOS body scroll.
+    // The container always fills exactly the visible area above the keyboard.
+    <div
+      style={{
+        position: "fixed",
+        top: vpTop,
+        left: 0,
+        right: 0,
+        height: vpHeight ?? "100dvh",
+        display: "flex",
+        flexDirection: "column",
+        background: "#F4F1EA",
+      }}
+    >
+      {/* Messages — only this region scrolls */}
+      <div
+        style={{
+          flex: 1,
+          overflowY: "auto",
+          overscrollBehavior: "contain",
+          padding: "24px 16px 8px",
+        }}
+      >
+        <div className="w-full max-w-md mx-auto space-y-3">
           {messages.map((msg, i) => (
             <div key={i} className={`flex ${msg.role === "user" ? "justify-end" : "justify-start"}`}>
               <div className={`rounded-2xl px-4 py-3 text-base leading-relaxed max-w-[85%] ${
@@ -379,39 +409,43 @@ function TextChatView({
           )}
           <div ref={bottomRef} />
         </div>
+      </div>
 
-        {/* Input row — sticks above keyboard on mobile via dvh layout */}
-        <div
-          className="flex gap-2 pt-2 items-end pb-3"
-          style={{ paddingBottom: "max(0.75rem, env(safe-area-inset-bottom, 0.75rem))" }}
+      {/* Input — never scrolls, always pinned at the bottom of the visible area */}
+      <div
+        className="w-full max-w-md mx-auto flex gap-2 items-end px-4"
+        style={{
+          flexShrink: 0,
+          paddingTop: 8,
+          paddingBottom: "max(12px, env(safe-area-inset-bottom, 12px))",
+        }}
+      >
+        <textarea
+          value={input}
+          rows={1}
+          onChange={(e) => {
+            setInput(e.target.value);
+            e.target.style.height = "auto";
+            e.target.style.height = `${e.target.scrollHeight}px`;
+          }}
+          onKeyDown={(e) => {
+            if (e.key === "Enter" && !e.shiftKey) {
+              e.preventDefault();
+              handleSend();
+            }
+          }}
+          placeholder={t.typePlaceholder}
+          className="flex-1 bg-[#EFEAE0] rounded-2xl px-4 py-3 text-[#3D3D3D] outline-none border border-[#1F3A2E]/10 focus:border-[#1F3A2E]/30 transition-colors resize-none overflow-hidden max-h-40"
+          style={{ lineHeight: "1.5", fontSize: 16 }}
+        />
+        <button
+          onClick={handleSend}
+          disabled={!input.trim() || thinking}
+          className="bg-[#1F3A2E] text-white rounded-full px-5 font-medium hover:bg-[#2A4D3D] transition-colors disabled:opacity-40 shrink-0 min-h-[48px]"
+          style={{ fontSize: 15 }}
         >
-          <textarea
-            value={input}
-            rows={1}
-            onChange={(e) => {
-              setInput(e.target.value);
-              e.target.style.height = "auto";
-              e.target.style.height = `${e.target.scrollHeight}px`;
-            }}
-            onKeyDown={(e) => {
-              if (e.key === "Enter" && !e.shiftKey) {
-                e.preventDefault();
-                handleSend();
-              }
-            }}
-            placeholder={t.typePlaceholder}
-            className="flex-1 bg-[#EFEAE0] rounded-2xl px-4 py-3 text-[#3D3D3D] outline-none border border-[#1F3A2E]/10 focus:border-[#1F3A2E]/30 transition-colors resize-none overflow-hidden max-h-40"
-            style={{ lineHeight: "1.5", fontSize: 16 }}
-          />
-          <button
-            onClick={handleSend}
-            disabled={!input.trim() || thinking}
-            className="bg-[#1F3A2E] text-white rounded-full px-5 font-medium hover:bg-[#2A4D3D] transition-colors disabled:opacity-40 shrink-0 min-h-[48px]"
-            style={{ fontSize: 15 }}
-          >
-            {t.send}
-          </button>
-        </div>
+          {t.send}
+        </button>
       </div>
     </div>
   );
@@ -576,22 +610,17 @@ function VoiceIntake({ onShowHistory, language, onLanguageChange }: {
 
         {/* Main content — Prana centered */}
         <div className="flex-1 flex flex-col items-center justify-center px-4 sm:px-6 py-6 sm:py-8">
-          <motion.div
-            initial={{ opacity: 0, y: 20 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ duration: 0.6 }}
-            className="text-center space-y-6 w-full max-w-sm md:max-w-lg"
-          >
-            <span className="font-serif text-[#1F3A2E] text-6xl sm:text-7xl md:text-8xl font-medium tracking-tight">
+          <div className="text-center w-full max-w-sm md:max-w-lg" style={{ display: "flex", flexDirection: "column", gap: 24 }}>
+            <div className="font-serif text-[#1F3A2E] font-medium tracking-tight" style={{ fontSize: "clamp(52px, 16vw, 96px)" }}>
               Prana
-            </span>
+            </div>
             <div className="flex justify-center">
               <div className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-[#7BA8A3]/15">
                 <Check className="w-3.5 h-3.5 text-[#7BA8A3]" />
                 <span className="text-xs sm:text-sm text-[#3D3D3D]">{t.tagline}</span>
               </div>
             </div>
-          </motion.div>
+          </div>
         </div>
 
         {/* Bottom CTA */}
