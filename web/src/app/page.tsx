@@ -327,6 +327,18 @@ function TextChatView({
     bottomRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages, thinking]);
 
+  // When the keyboard opens/closes (visualViewport resizes), scroll to the
+  // bottom so the most recent message stays visible above the input.
+  useEffect(() => {
+    const vv = window.visualViewport;
+    if (!vv) return;
+    const onResize = () => {
+      bottomRef.current?.scrollIntoView({ behavior: "instant" });
+    };
+    vv.addEventListener("resize", onResize);
+    return () => vv.removeEventListener("resize", onResize);
+  }, []);
+
   const handleSend = async () => {
     if (!input.trim() || thinking) return;
     const userMsg = { role: "user" as const, content: input.trim() };
@@ -337,7 +349,7 @@ function TextChatView({
   };
 
   return (
-    <div className="flex flex-col bg-[#F4F1EA] px-4 sm:px-6 pt-6 sm:pt-8" style={{ height: "100dvh" }}>
+    <div className="flex flex-col bg-[#F4F1EA] px-4 sm:px-6 pt-6 sm:pt-8 overflow-hidden" style={{ height: "100dvh" }}>
       {/* Chat area */}
       <div className="w-full max-w-md mx-auto flex flex-col gap-3 flex-1 min-h-0">
         <div className="flex-1 overflow-y-auto space-y-3 pr-1">
