@@ -147,10 +147,6 @@ export default function GraphPage() {
               height={dims.h}
               focusNodeId={focusId}
               onNodeClick={(node) => {
-                if (node.id.startsWith("run-")) {
-                  router.push(`/dashboard?run_id=${node.id.slice(4)}`);
-                  return;
-                }
                 setSelected(node);
                 setFocusId(node.id);
               }}
@@ -280,9 +276,20 @@ export default function GraphPage() {
                   <div className="text-[10px] uppercase tracking-wider text-[#6B7280] font-semibold mb-1">
                     ID
                   </div>
-                  <div className="text-[11px] font-mono text-[#3D3D3D]/70 break-all">
+                  <div className="text-[11px] font-mono text-[#3D3D3D]/70 break-all mb-4">
                     {selected.id}
                   </div>
+
+                  {/* Open-session CTA — only for run nodes */}
+                  {selected.id.startsWith("run-") && (
+                    <button
+                      onClick={() => router.push(`/dashboard?run_id=${selected.id.slice(4)}`)}
+                      className="w-full bg-[#1F3A2E] text-white rounded-full font-medium text-sm hover:bg-[#2A4D3D] transition-colors py-2.5 flex items-center justify-center gap-1.5"
+                    >
+                      Open session
+                      <span className="text-base leading-none">→</span>
+                    </button>
+                  )}
                 </div>
               </motion.div>
             )}
