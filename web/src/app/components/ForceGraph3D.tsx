@@ -32,12 +32,13 @@ const TYPE_COLORS: Record<string, string> = {
 interface Props {
   graphData: GraphData;
   onNodeClick?: (node: GraphNode) => void;
+  onNodeHover?: (node: GraphNode | null) => void;
   focusNodeId?: string | null;
   width: number;
   height: number;
 }
 
-export default function ForceGraph3D({ graphData, onNodeClick, focusNodeId, width, height }: Props) {
+export default function ForceGraph3D({ graphData, onNodeClick, onNodeHover, focusNodeId, width, height }: Props) {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const fgRef = useRef<any>(null);
   const hasZoomedRef = useRef(false);
@@ -111,33 +112,75 @@ export default function ForceGraph3D({ graphData, onNodeClick, focusNodeId, widt
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const createNode = useCallback((node: any) => {
     const group = new THREE.Group();
-    const hex = TYPE_COLORS[node.type] ?? "#818cf8";
-    // Keep nodes small and uniform — val is 1–5, size stays 1.5–3
-    const size = Math.max(1.5, Math.min(3, (node.val || 3) * 0.55));
+    const hex = TYPE_COLORS[node.type] ?? "#A78BFA";
+    // Bigger, more readable spheres
+    const size = Math.max(2.8, Math.min(5, (node.val || 3) * 0.85));
 
+    // Inner solid sphere (saturated brand color)
     group.add(new THREE.Mesh(
-      new THREE.SphereGeometry(size, 24, 24),
-      new THREE.MeshBasicMaterial({ color: new THREE.Color(hex), transparent: true, opacity: 0.9 })
+      new THREE.SphereGeometry(size * 0.7, 32, 32),
+      new THREE.MeshBasicMaterial({ color: new THREE.Color(hex), transparent: true, opacity: 1 })
     ));
 
+    // Outer translucent shell — gives a soft rim
+    group.add(new THREE.Mesh(
+      new THREE.SphereGeometry(size, 32, 32),
+      new THREE.MeshBasicMaterial({
+        color: new THREE.Color(hex),
+        transparent: true,
+        opacity: 0.25,
+        depthWrite: false,
+      })
+    ));
+
+    // Outer glow halo
     const glowSprite = new THREE.Sprite(
       new THREE.SpriteMaterial({ map: getGlow(hex), transparent: true, depthWrite: false, blending: THREE.AdditiveBlending })
     );
-    glowSprite.scale.set(size * 2.5, size * 2.5, 1);
+    glowSprite.scale.set(size * 4.2, size * 4.2, 1);
     group.add(glowSprite);
 
+    // Label rendered with a subtle pill background so it's readable on any color
     const lc = document.createElement("canvas");
-    lc.width = 512; lc.height = 64;
+    const W = 768, H = 96;
+    lc.width = W; lc.height = H;
     const lctx = lc.getContext("2d")!;
-    lctx.font = "400 18px Inter, sans-serif";
-    lctx.fillStyle = "rgba(226,232,240,0.75)";
-    lctx.textAlign = "center"; lctx.textBaseline = "middle";
-    lctx.fillText((node.name || "").slice(0, 28), 256, 32);
+    const text = (node.name || "").slice(0, 32);
+    lctx.font = "500 28px 'DM Sans', 'Inter', sans-serif";
+    const metrics = lctx.measureText(text);
+    const padX = 22, padY = 12, textW = metrics.width;
+    const pillW = Math.min(W - 8, textW + padX * 2);
+    const pillH = 44;
+    const x0 = (W - pillW) / 2;
+    const y0 = (H - pillH) / 2;
+    // Pill background (deep sage with low alpha)
+    lctx.fillStyle = "rgba(15, 28, 22, 0.78)";
+    const r = pillH / 2;
+    lctx.beginPath();
+    lctx.moveTo(x0 + r, y0);
+    lctx.lineTo(x0 + pillW - r, y0);
+    lctx.quadraticCurveTo(x0 + pillW, y0, x0 + pillW, y0 + r);
+    lctx.lineTo(x0 + pillW, y0 + pillH - r);
+    lctx.quadraticCurveTo(x0 + pillW, y0 + pillH, x0 + pillW - r, y0 + pillH);
+    lctx.lineTo(x0 + r, y0 + pillH);
+    lctx.quadraticCurveTo(x0, y0 + pillH, x0, y0 + pillH - r);
+    lctx.lineTo(x0, y0 + r);
+    lctx.quadraticCurveTo(x0, y0, x0 + r, y0);
+    lctx.fill();
+
+    lctx.fillStyle = "rgba(244, 241, 234, 0.96)";
+    lctx.textAlign = "center";
+    lctx.textBaseline = "middle";
+    lctx.fillText(text, W / 2, H / 2 + padY * 0);
+
+    const labelTex = new THREE.CanvasTexture(lc);
+    labelTex.minFilter = THREE.LinearFilter;
     const labelSprite = new THREE.Sprite(
-      new THREE.SpriteMaterial({ map: new THREE.CanvasTexture(lc), transparent: true, depthTest: false })
+      new THREE.SpriteMaterial({ map: labelTex, transparent: true, depthTest: false })
     );
-    labelSprite.scale.set(size * 5, size * 5 * (64 / 512), 1);
-    labelSprite.position.y = size + 1.5;
+    const labelScale = size * 5;
+    labelSprite.scale.set(labelScale, labelScale * (H / W), 1);
+    labelSprite.position.y = size + labelScale * (H / W) * 0.6 + 0.4;
     group.add(labelSprite);
     return group;
   }, [getGlow]);
@@ -165,8 +208,15 @@ export default function ForceGraph3D({ graphData, onNodeClick, focusNodeId, widt
       nodeThreeObject={createNode}
       nodeThreeObjectExtend={false}
       onNodeClick={handleClick}
-      linkColor={() => "rgba(148,163,184,0.1)"}
-      linkWidth={0.3}
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      onNodeHover={(node: any) => {
+        if (!onNodeHover) return;
+        if (!node) { onNodeHover(null); return; }
+        const graphNode = graphData.nodes.find((n) => n.id === node.id);
+        if (graphNode) onNodeHover(graphNode);
+      }}
+      linkColor={() => "rgba(244,241,234,0.18)"}
+      linkWidth={0.6}
       linkDirectionalParticles={1}
       linkDirectionalParticleWidth={0.8}
       linkDirectionalParticleSpeed={0.004}
