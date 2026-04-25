@@ -66,3 +66,57 @@ export function listRuns(): Promise<RunSummary[]> {
 export function getSSEUrl(runId: string): string {
   return `${BACKEND}/runs/${runId}/events`;
 }
+
+export interface CartItem {
+  id: number;
+  run_id: string;
+  agent_name: string;
+  platform: string;
+  item_name: string | null;
+  item_price: number;
+  item_url: string | null;
+  item_description: string | null;
+  in_stock: number;
+  created_at: string;
+}
+
+export interface BudgetSession {
+  run_id: string;
+  total_budget_usd: number;
+  per_agent_usd: number;
+  num_agents: number;
+  status: string;
+  stripe_session_id?: string | null;
+  checkout_url?: string | null;
+}
+
+export interface BudgetWallet {
+  run_id: string;
+  agent_name: string;
+  allocated_usd: number;
+  balance_usd: number;
+  status: string;
+}
+
+export interface BudgetStatus {
+  session: BudgetSession;
+  wallets: BudgetWallet[];
+  cart: CartItem[];
+}
+
+export function getBudget(runId: string): Promise<BudgetStatus> {
+  return request(`/budget/${runId}`);
+}
+
+export interface CheckoutItem {
+  name: string;
+  platform: string;
+  price: number;
+}
+
+export function createBudgetCheckout(runId: string, items: CheckoutItem[]): Promise<{ checkout_url: string; session_id: string }> {
+  return request("/budget/checkout", {
+    method: "POST",
+    body: JSON.stringify({ run_id: runId, items }),
+  });
+}
