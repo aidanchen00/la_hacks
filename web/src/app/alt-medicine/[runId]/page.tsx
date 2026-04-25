@@ -1,17 +1,18 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useParams } from "next/navigation";
 import type mapboxgl from "mapbox-gl";
 import {
-  LiveKitRoom,
+  SessionProvider,
+  useSession,
   useAgent,
   BarVisualizer,
   RoomAudioRenderer,
   TrackToggle,
   DisconnectButton,
 } from "@livekit/components-react";
-import { Track } from "livekit-client";
+import { Track, TokenSource } from "livekit-client";
 import "@livekit/components-styles";
 
 const TRADITIONS = {
@@ -121,20 +122,37 @@ function AltMedicineCallWindow({
   tradition: TraditionData;
   onClose: () => void;
 }) {
-  const [conn, setConn] = useState<{ serverUrl: string; token: string } | null>(null);
-  const [error, setError] = useState<string | null>(null);
-  const roomNameRef = useRef(`altmed-${traditionKey}-${Date.now()}`);
+  const roomName = useMemo(() => `altmed-${traditionKey}-${Date.now()}`, [traditionKey]);
 
-  useEffect(() => {
-    fetch("/api/token", {
+  const tokenSource = useMemo(() => TokenSource.custom(async () => {
+    const resp = await fetch("/api/token", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ room_name: roomNameRef.current, participant_name: "user" }),
-    })
-      .then((r) => r.json())
-      .then((data) => setConn({ serverUrl: data.serverUrl, token: data.participantToken }))
-      .catch(() => setError("Failed to connect to agent"));
+      body: JSON.stringify({ room_name: roomName, participant_name: "user" }),
+    });
+    if (!resp.ok) throw new Error("Token fetch failed");
+    const data = await resp.json();
+    return { serverUrl: data.serverUrl, participantToken: data.participantToken };
+  }), [roomName]);
+
+  const session = useSession(tokenSource);
+  const sessionRef = useRef(session);
+  const [error, setError] = useState<string | null>(null);
+
+  // Capture session at mount time and start once — do NOT depend on `session`
+  // because useSession returns a new object on every connection-state change,
+  // which would cause start→state-change→re-render→end→start infinitely.
+  useEffect(() => {
+    const s = sessionRef.current;
+    s.start().catch((e: unknown) => setError(e instanceof Error ? e.message : "Failed to connect"));
+    return () => { s.end().catch(() => {}); };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  const handleClose = () => {
+    session.end().catch(() => {});
+    onClose();
+  };
 
   return (
     <div style={{
@@ -160,7 +178,7 @@ function AltMedicineCallWindow({
           <div style={{ fontSize: 11, color: tradition.color, marginTop: 1 }}>Wellness Educator</div>
         </div>
         <button
-          onClick={onClose}
+          onClick={handleClose}
           style={{ background: "none", border: "none", color: "#64748b", cursor: "pointer", fontSize: 20, lineHeight: 1, padding: 2, flexShrink: 0 }}
         >
           ×
@@ -170,22 +188,11 @@ function AltMedicineCallWindow({
       {/* Body */}
       {error ? (
         <div style={{ padding: 20, color: "#f87171", fontSize: 12, textAlign: "center" }}>{error}</div>
-      ) : !conn ? (
-        <div style={{ padding: 28, textAlign: "center", color: "#64748b", fontSize: 12 }}>
-          Connecting to agent…
-        </div>
       ) : (
-        <LiveKitRoom
-          serverUrl={conn.serverUrl}
-          token={conn.token}
-          connect={true}
-          audio={true}
-          video={false}
-          onDisconnected={onClose}
-        >
-          <CallContent tradition={tradition} onClose={onClose} />
+        <SessionProvider session={session}>
+          <CallContent tradition={tradition} onClose={handleClose} />
           <RoomAudioRenderer />
-        </LiveKitRoom>
+        </SessionProvider>
       )}
     </div>
   );

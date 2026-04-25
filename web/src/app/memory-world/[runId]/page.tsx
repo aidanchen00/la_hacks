@@ -19,6 +19,7 @@ export default function MemoryWorldPage() {
   const [credentials, setCredentials] = useState<ReturnType<typeof credentialsFromDict> | null>(null);
 
   const odyssey = useOdyssey({
+    apiKey: process.env.NEXT_PUBLIC_ODYSSEY_API_KEY,
     handlers: {
       onConnected: (stream) => {
         if (videoRef.current) videoRef.current.srcObject = stream;

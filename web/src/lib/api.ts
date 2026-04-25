@@ -57,7 +57,10 @@ export interface RunSummary {
 }
 
 export function listRuns(): Promise<RunSummary[]> {
-  return request("/runs");
+  return fetch("/api/runs").then((r) => {
+    if (!r.ok) throw new Error(`/api/runs → ${r.status}`);
+    return r.json();
+  });
 }
 
 export function getSSEUrl(runId: string): string {
