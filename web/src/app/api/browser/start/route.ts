@@ -5,7 +5,8 @@ export const maxDuration = 120;
 
 type BrowserMode = "doctor" | "pharmacy";
 
-const DOCTOR_SITES = ["ZocDoc", "Healthgrades", "Solv"] as const;
+// ZocDoc removed — heavy anti-bot wall blocks even bu-max.
+const DOCTOR_SITES = ["Healthgrades", "Solv"] as const;
 const PHARMACY_SITES = ["CVS", "Walgreens", "GoodRx"] as const;
 
 const DOCTOR_OUTPUT_SCHEMA = {
@@ -170,13 +171,15 @@ export async function POST(request: NextRequest) {
 
   const outcomes = await Promise.allSettled(
     sites.map(async (site) => {
-      // Doctor: BYOK gpt-5.4-mini — cheap, works on doctor sites.
-      // Pharmacy: bu-max — gpt-5.4-mini can't pass CVS/GoodRx anti-bot walls,
-      // so override with BrowserUse's browser-tuned model for retail sites.
+      // Both modes default to bu-max — ZocDoc and CVS/GoodRx all have anti-bot
+      // walls that gpt-5.4-mini gets stuck on. bu-max is BrowserUse's
+      // browser-tuned model and bills BU credits but actually navigates them.
+      // Healthgrades works fine on either model; per-site override isn't worth
+      // the complexity.
       const model = (
         mode === "pharmacy"
           ? (process.env.BROWSER_USE_PHARMACY_MODEL ?? "bu-max")
-          : (process.env.BROWSER_USE_MODEL ?? "gpt-5.4-mini")
+          : (process.env.BROWSER_USE_DOCTOR_MODEL ?? "bu-max")
       ) as BuModel;
       const session = await client.sessions.create({
         keepAlive: true,

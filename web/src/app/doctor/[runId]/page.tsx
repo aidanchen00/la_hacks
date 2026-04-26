@@ -197,7 +197,7 @@ function ResultsModal({
           >
             Close
           </button>
-          {hasRanker && allProviders.length > 0 && (
+          {allProviders.length > 0 && (
             <button
               onClick={onBookNow}
               className="flex-1 rounded-full font-medium text-sm cursor-pointer"
@@ -208,7 +208,7 @@ function ResultsModal({
                 minHeight: 44,
               }}
             >
-              Book ranker pick
+              {hasRanker ? "Book ranker pick" : "Book first provider"}
             </button>
           )}
         </div>
@@ -455,19 +455,44 @@ export default function DoctorPage() {
       .catch(() => { /* non-fatal */ });
   }, [paymentStatus, rankerSelected, rankerSelectedTotal, runId]);
 
-  const handleBookAppointment = async () => {
-    if (!rankerSelected.length) return;
-    setBookingLoading(true);
-    setBookingError(null);
-    try {
-      const items = rankerSelected.map((r) => ({
+  // Bookable items: prefer the ranker's selection, fall back to the first
+  // parsed provider so a Book button is always reachable when at least one
+  // session returned a provider (the ranker may not have fired yet, or may
+  // have selected nothing).
+  const fallbackProvider = (() => {
+    for (const s of sessions) {
+      const parsed = parseProviders(s.output);
+      if (parsed.length) return { site: s.agent, provider: parsed[0] };
+    }
+    return null;
+  })();
+  const bookableItems = rankerSelected.length > 0
+    ? rankerSelected.map((r) => ({
         id: r.id,
         name: r.name,
         price: r.price,
         source_agent: r.source_agent,
         description: r.description,
-      }));
-      const { checkout_url } = await createDoctorCheckout(runId, items);
+      }))
+    : fallbackProvider
+      ? [{
+          id: undefined,
+          name: fallbackProvider.provider.provider,
+          price: 150,
+          source_agent: fallbackProvider.site,
+          description: fallbackProvider.provider.specialty
+            ?? fallbackProvider.provider.address
+            ?? null,
+        }]
+      : [];
+  const canBook = bookableItems.length > 0;
+
+  const handleBookAppointment = async () => {
+    if (!bookableItems.length) return;
+    setBookingLoading(true);
+    setBookingError(null);
+    try {
+      const { checkout_url } = await createDoctorCheckout(runId, bookableItems);
       window.location.href = checkout_url;
     } catch (e) {
       setBookingError(e instanceof Error ? e.message : "Booking failed");
@@ -684,6 +709,43 @@ export default function DoctorPage() {
                 </motion.div>
               );
             })()}
+
+            {/* Always-visible Book CTA: shows once any provider is parsed,
+                regardless of ranker state. Falls back to the first provider
+                if the ranker hasn't selected anything yet. */}
+            {canBook && paymentStatus !== "success" && (
+              <motion.div
+                initial={{ opacity: 0, y: 10 }}
+                animate={{ opacity: 1, y: 0 }}
+                className="bg-[#1F3A2E] text-white rounded-2xl p-6 mt-6 flex flex-col md:flex-row md:items-center md:justify-between gap-4"
+              >
+                <div>
+                  <div className="font-serif text-xl font-medium">
+                    {rankerSelected.length > 0
+                      ? `Ready to book ${rankerSelected.length} appointment${rankerSelected.length !== 1 ? "s" : ""}`
+                      : "Ready to book your appointment"}
+                  </div>
+                  <div className="text-sm text-white/75 mt-1">
+                    {bookableItems[0]?.source_agent} · {bookableItems[0]?.name}
+                    {bookableItems.length > 1 ? ` (+${bookableItems.length - 1} more)` : ""}
+                  </div>
+                  {bookingError && (
+                    <div className="text-[#FCA5A5] text-sm mt-2">{bookingError}</div>
+                  )}
+                </div>
+                <motion.button
+                  whileHover={{ scale: 1.02 }}
+                  whileTap={{ scale: 0.98 }}
+                  onClick={handleBookAppointment}
+                  disabled={bookingLoading}
+                  className="bg-white text-[#1F3A2E] font-medium rounded-full px-6 py-3 min-h-[44px] disabled:opacity-50 hover:bg-white/90 transition-colors"
+                >
+                  {bookingLoading
+                    ? "Redirecting to Stripe…"
+                    : `Book & Pay $${bookableItems.reduce((s, i) => s + (i.price ?? 0), 0).toFixed(2)}`}
+                </motion.button>
+              </motion.div>
+            )}
 
             {/* Payment success / cancel banners */}
             {paymentStatus === "success" && rankerSelected.length > 0 && (
