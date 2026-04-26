@@ -70,9 +70,10 @@ export async function POST(req: Request) {
     const body = await req.json();
     const transcript: string = body.transcript ?? "";
     const summary: string = body.summary ?? "";
+    const nullifier_hash: string | undefined = body.nullifier_hash ?? undefined;
     const run_id = crypto.randomUUID();
 
-    insertRun(run_id, transcript, summary);
+    insertRun(run_id, transcript, summary, nullifier_hash);
 
     try {
       const decision = await routeIntake(transcript, summary);

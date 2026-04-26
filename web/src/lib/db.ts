@@ -71,6 +71,7 @@ function initSchema(db: Database.Database) {
       status TEXT NOT NULL DEFAULT 'pending',
       instruction TEXT,
       intake_summary TEXT,
+      nullifier_hash TEXT,
       created_at TEXT NOT NULL DEFAULT (datetime('now')),
       updated_at TEXT NOT NULL DEFAULT (datetime('now')),
       FOREIGN KEY (user_id) REFERENCES users(id)
@@ -122,6 +123,9 @@ function initSchema(db: Database.Database) {
     CREATE INDEX IF NOT EXISTS idx_agent_events_run ON agent_events(run_id);
     CREATE INDEX IF NOT EXISTS idx_runs_status ON runs(status);
   `);
+
+  // Migrate: add nullifier_hash if not present (existing DBs)
+  try { db.exec("ALTER TABLE runs ADD COLUMN nullifier_hash TEXT"); } catch { /* already exists */ }
 }
 
 // ---------------------------------------------------------------------------
@@ -137,12 +141,12 @@ export interface RunRow {
   created_at: string;
 }
 
-export function insertRun(id: string, instruction: string, intakeSummary?: string): void {
+export function insertRun(id: string, instruction: string, intakeSummary?: string, nullifierHash?: string): void {
   getDb()
     .prepare(
-      "INSERT OR IGNORE INTO runs (id, instruction, intake_summary, status) VALUES (?, ?, ?, 'pending')"
+      "INSERT OR IGNORE INTO runs (id, instruction, intake_summary, nullifier_hash, status) VALUES (?, ?, ?, ?, 'pending')"
     )
-    .run(id, instruction, intakeSummary ?? null);
+    .run(id, instruction, intakeSummary ?? null, nullifierHash ?? null);
 }
 
 export function updateRunStatus(id: string, status: string): void {

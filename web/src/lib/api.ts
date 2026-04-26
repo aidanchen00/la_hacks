@@ -13,6 +13,7 @@ export interface IntakePayload {
   summary: string;
   voice_session_id?: string;
   user_email?: string;
+  nullifier_hash?: string;
 }
 
 export interface RunStatus {

@@ -20,6 +20,7 @@ import { postIntake, listRuns, type RunSummary } from "@/lib/api";
 import { useRouter, useSearchParams } from "next/navigation";
 import { motion } from "motion/react";
 import { Clock, Globe, Settings, Check } from "lucide-react";
+import WorldIDGate from "@/components/WorldIDGate";
 
 type Lang = "en" | "es" | "zh";
 
@@ -472,6 +473,24 @@ function VoiceIntake({ onShowHistory, language, onLanguageChange }: {
   const [submitting, setSubmitting] = useState(false);
   const router = useRouter();
 
+  // World ID verification — persisted for the browser session
+  const [verified, setVerified] = useState(false);
+  const nullifierHashRef = useRef<string | null>(null);
+
+  useEffect(() => {
+    if (typeof window !== "undefined" && sessionStorage.getItem("wid_verified") === "1") {
+      setVerified(true);
+      nullifierHashRef.current = sessionStorage.getItem("wid_nullifier");
+    }
+  }, []);
+
+  const handleWorldIDVerified = useCallback((nullifierHash: string) => {
+    nullifierHashRef.current = nullifierHash;
+    sessionStorage.setItem("wid_verified", "1");
+    sessionStorage.setItem("wid_nullifier", nullifierHash);
+    setVerified(true);
+  }, []);
+
   const handleIntakeComplete = useCallback(async (data: IntakeData) => {
     setSubmitting(true);
     try {
@@ -479,6 +498,7 @@ function VoiceIntake({ onShowHistory, language, onLanguageChange }: {
         transcript: data.symptoms?.join(", ") ?? "",
         summary: data.summary ?? "Intake completed via voice session.",
         voice_session_id: (session as { roomName?: string }).roomName ?? undefined,
+        nullifier_hash: nullifierHashRef.current ?? undefined,
       });
 
       fetch("/api/composio/sheets", {
@@ -629,14 +649,24 @@ function VoiceIntake({ onShowHistory, language, onLanguageChange }: {
           style={{ paddingBottom: "max(2.5rem, env(safe-area-inset-bottom, 2.5rem))" }}
         >
           <div className="max-w-sm md:max-w-md mx-auto space-y-3">
-            <motion.button
-              onClick={() => setStarted(true)}
-              whileHover={{ scale: 1.01 }}
-              whileTap={{ scale: 0.99 }}
-              className="w-full bg-[#1F3A2E] text-white rounded-full font-medium text-lg hover:bg-[#2A4D3D] transition-colors min-h-[56px]"
-            >
-              {t.startTalking}
-            </motion.button>
+            {verified ? (
+              <>
+                <div className="flex items-center justify-center gap-1.5 py-1">
+                  <Check className="w-3.5 h-3.5 text-[#16A34A]" />
+                  <span className="text-xs text-[#16A34A] font-medium">Verified human · World ID</span>
+                </div>
+                <motion.button
+                  onClick={() => setStarted(true)}
+                  whileHover={{ scale: 1.01 }}
+                  whileTap={{ scale: 0.99 }}
+                  className="w-full bg-[#1F3A2E] text-white rounded-full font-medium text-lg hover:bg-[#2A4D3D] transition-colors min-h-[56px]"
+                >
+                  {t.startTalking}
+                </motion.button>
+              </>
+            ) : (
+              <WorldIDGate onVerified={handleWorldIDVerified} />
+            )}
             <div className="flex items-center justify-center gap-4">
               <button
                 onClick={() => { setTextMode(true); setStarted(true); }}
