@@ -88,6 +88,7 @@ function initSchema(db: Database.Database) {
       requires_doctor_approval INTEGER NOT NULL DEFAULT 0,
       rationale TEXT,
       disclaimers TEXT NOT NULL DEFAULT '[]',
+      citations TEXT NOT NULL DEFAULT '[]',
       created_at TEXT NOT NULL DEFAULT (datetime('now')),
       FOREIGN KEY (run_id) REFERENCES runs(id)
     );
@@ -126,6 +127,8 @@ function initSchema(db: Database.Database) {
 
   // Migrate: add nullifier_hash if not present (existing DBs)
   try { db.exec("ALTER TABLE runs ADD COLUMN nullifier_hash TEXT"); } catch { /* already exists */ }
+  // Migrate: add citations column if not present (existing DBs)
+  try { db.exec("ALTER TABLE routing_decisions ADD COLUMN citations TEXT NOT NULL DEFAULT '[]'"); } catch { /* already exists */ }
 }
 
 // ---------------------------------------------------------------------------
@@ -174,6 +177,7 @@ export interface RoutingDecisionRow {
   requires_doctor_approval: number;
   rationale: string | null;
   disclaimers: string;
+  citations: string;
 }
 
 export function upsertRoutingDecision(d: RoutingDecisionRow): void {
@@ -181,13 +185,13 @@ export function upsertRoutingDecision(d: RoutingDecisionRow): void {
     .prepare(
       `INSERT OR REPLACE INTO routing_decisions
        (run_id, urgency, recommended_path, summary, next_actions, payment_required,
-        payment_amount, requires_doctor_approval, rationale, disclaimers)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+        payment_amount, requires_doctor_approval, rationale, disclaimers, citations)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
     )
     .run(
       d.run_id, d.urgency, d.recommended_path, d.summary ?? null,
       d.next_actions, d.payment_required, d.payment_amount,
-      d.requires_doctor_approval, d.rationale ?? null, d.disclaimers
+      d.requires_doctor_approval, d.rationale ?? null, d.disclaimers, d.citations
     );
 }
 

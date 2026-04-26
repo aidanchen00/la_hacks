@@ -77,13 +77,61 @@ const PATH_LABELS: Record<string, string> = {
 
 function RecentSessions({ onClose }: { onClose: () => void }) {
   const [runs, setRuns] = useState<RunSummary[]>([]);
+  const [newRunIds, setNewRunIds] = useState<Set<string>>(new Set());
+  const knownIdsRef = useRef<Set<string>>(new Set());
+  const isInitialRef = useRef(true);
   const router = useRouter();
 
-  useEffect(() => {
-    listRuns()
-      .then((data) => { if (Array.isArray(data)) setRuns(data.slice(0, 6)); })
-      .catch(() => {});
+  const fetchAndMerge = useCallback(async () => {
+    try {
+      const data = await listRuns();
+      if (!Array.isArray(data)) return;
+
+      const initial = isInitialRef.current;
+      isInitialRef.current = false;
+
+      if (initial) {
+        const sliced = data.slice(0, 6);
+        setRuns(sliced);
+        data.forEach(r => knownIdsRef.current.add(r.id));
+        return;
+      }
+
+      const brandNew = data.filter(r => !knownIdsRef.current.has(r.id));
+      data.forEach(r => knownIdsRef.current.add(r.id));
+      if (brandNew.length === 0) return;
+
+      setRuns(prev => [...brandNew, ...prev].slice(0, 6));
+
+      const ids = brandNew.map(r => r.id);
+      setNewRunIds(prev => new Set([...prev, ...ids]));
+      setTimeout(() => {
+        setNewRunIds(prev => {
+          const next = new Set(prev);
+          ids.forEach(id => next.delete(id));
+          return next;
+        });
+      }, 5000);
+    } catch { /* ignore network errors during polling */ }
   }, []);
+
+  useEffect(() => {
+    fetchAndMerge();
+
+    const intervalId = setInterval(() => {
+      if (document.visibilityState !== "hidden") fetchAndMerge();
+    }, 3000);
+
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === "visible") fetchAndMerge();
+    };
+    document.addEventListener("visibilitychange", handleVisibilityChange);
+
+    return () => {
+      clearInterval(intervalId);
+      document.removeEventListener("visibilitychange", handleVisibilityChange);
+    };
+  }, [fetchAndMerge]);
 
   return (
     <motion.div
@@ -114,11 +162,13 @@ function RecentSessions({ onClose }: { onClose: () => void }) {
               const pathLabel = PATH_LABELS[run.recommended_path ?? ""] ?? "Pending";
               const color = URGENCY_COLORS[run.urgency ?? ""] ?? "#6B7280";
               const date = new Date(run.created_at).toLocaleDateString(undefined, { month: "short", day: "numeric" });
+              const isNew = newRunIds.has(run.id);
               return (
                 <button
                   key={run.id}
                   onClick={() => router.push(`/dashboard?run_id=${run.id}`)}
                   className="w-full text-left bg-[#EFEAE0] rounded-2xl p-4 border border-[#1F3A2E]/10 hover:border-[#1F3A2E]/30 transition-colors min-h-[72px]"
+                  style={isNew ? { animation: "runHighlight 5s ease-out forwards" } : undefined}
                 >
                   <div className="flex items-start justify-between gap-3">
                     <p className="text-[#3D3D3D] text-sm leading-relaxed flex-1 line-clamp-2">

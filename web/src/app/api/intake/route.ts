@@ -29,8 +29,29 @@ Return ONLY valid JSON:
   "payment_amount_usd": 0.0,
   "requires_doctor_approval": false,
   "rationale": "Brief reasoning",
-  "disclaimers": ["Disclaimer text"]
-}`;
+  "disclaimers": ["Disclaimer text"],
+  "conditions": ["specific medical condition or syndrome mentioned in the summary, e.g. strep throat, hypertension"]
+}
+
+conditions: array of specific medical conditions or clinical terms mentioned or implied in the summary. Use concise searchable names (e.g. "strep throat" not "a bacterial infection of the throat"). Empty array if none.`;
+
+interface CitationSource { source: string; urlFn: (q: string) => string }
+const CITATION_SOURCES: CitationSource[] = [
+  { source: "Mayo Clinic",      urlFn: q => `https://www.mayoclinic.org/search/search-results?q=${q}` },
+  { source: "Healthline",       urlFn: q => `https://www.healthline.com/search?q1=${q}` },
+  { source: "Cleveland Clinic", urlFn: q => `https://my.clevelandclinic.org/search#q=${q}` },
+  { source: "NIH",              urlFn: q => `https://www.nih.gov/search/results?terms=${q}` },
+];
+
+function buildCitations(conditions: string[]) {
+  return conditions.flatMap(condition =>
+    CITATION_SOURCES.map(({ source, urlFn }) => ({
+      condition,
+      source,
+      url: urlFn(encodeURIComponent(condition)),
+    }))
+  );
+}
 
 async function routeIntake(transcript: string, summary: string) {
   const userContent = `Intake transcript/symptoms: ${transcript}\n\nSummary: ${summary}`;
@@ -42,7 +63,7 @@ async function routeIntake(transcript: string, summary: string) {
         { role: "user", content: userContent },
       ],
       temperature: 0,
-      max_tokens: 600,
+      max_tokens: 700,
     });
     let raw = resp.choices[0].message.content ?? "{}";
     if (raw.startsWith("```")) {
@@ -74,6 +95,7 @@ export async function POST(req: Request) {
     const run_id = crypto.randomUUID();
 
     insertRun(run_id, transcript, summary, nullifier_hash);
+    console.log(`INTAKE WRITE: run_id=${run_id}, timestamp=${new Date().toISOString()}`);
 
     try {
       const decision = await routeIntake(transcript, summary);
@@ -84,6 +106,7 @@ export async function POST(req: Request) {
         }
         decision.disclaimers = disclaimers;
       }
+      const citations = buildCitations(decision.conditions ?? []);
       upsertRoutingDecision({
         run_id,
         urgency: decision.urgency ?? "wellness",
@@ -95,6 +118,7 @@ export async function POST(req: Request) {
         requires_doctor_approval: decision.requires_doctor_approval ? 1 : 0,
         rationale: decision.rationale ?? null,
         disclaimers: JSON.stringify(decision.disclaimers ?? []),
+        citations: JSON.stringify(citations),
       });
       updateRunStatus(run_id, "routed");
     } catch {

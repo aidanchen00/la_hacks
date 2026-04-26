@@ -22,6 +22,16 @@ export const FIXTURE_ROUTING_DECISION = {
     "Prana is a wellness education tool, not a medical diagnosis service.",
     "Always consult a licensed healthcare professional for medical advice.",
   ],
+  citations: [
+    { condition: "upper respiratory infection", source: "Mayo Clinic",      url: "https://www.mayoclinic.org/search/search-results?q=upper%20respiratory%20infection" },
+    { condition: "upper respiratory infection", source: "Healthline",       url: "https://www.healthline.com/search?q1=upper%20respiratory%20infection" },
+    { condition: "upper respiratory infection", source: "Cleveland Clinic", url: "https://my.clevelandclinic.org/search#q=upper%20respiratory%20infection" },
+    { condition: "upper respiratory infection", source: "NIH",              url: "https://www.nih.gov/search/results?terms=upper%20respiratory%20infection" },
+    { condition: "strep throat",               source: "Mayo Clinic",      url: "https://www.mayoclinic.org/search/search-results?q=strep%20throat" },
+    { condition: "strep throat",               source: "Healthline",       url: "https://www.healthline.com/search?q1=strep%20throat" },
+    { condition: "strep throat",               source: "Cleveland Clinic", url: "https://my.clevelandclinic.org/search#q=strep%20throat" },
+    { condition: "strep throat",               source: "NIH",              url: "https://www.nih.gov/search/results?terms=strep%20throat" },
+  ],
 };
 
 export const FIXTURE_DOCTOR_SESSIONS = [

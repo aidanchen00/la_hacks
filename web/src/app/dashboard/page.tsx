@@ -7,6 +7,7 @@ import { FIXTURE_ROUTING_DECISION } from "@/fixtures";
 import { Suspense } from "react";
 import { motion } from "motion/react";
 import { Plus, Bookmark, Phone, Navigation, AlertCircle } from "lucide-react";
+import CostTransparency from "@/components/CostTransparency";
 
 const PATH_CONFIG = {
   doctor: {
@@ -210,9 +211,37 @@ function DashboardContent() {
                 </div>
               )}
 
-              <h1 className="font-serif text-[#1F3A2E] text-2xl sm:text-[36px] leading-[1.3] font-medium mt-4 mb-4">
+              <h1 className="font-serif text-[#1F3A2E] text-2xl sm:text-[36px] leading-[1.3] font-medium mt-4 mb-3">
                 {rd?.summary ?? (run?.intake_summary ? "Your care plan is ready." : "Your intake is being processed…")}
               </h1>
+
+              {/* Citations */}
+              {rd?.citations && rd.citations.length > 0 && (() => {
+                const grouped = rd.citations.reduce<Record<string, typeof rd.citations>>((acc, c) => {
+                  (acc[c.condition] ??= []).push(c);
+                  return acc;
+                }, {});
+                return (
+                  <div className="mb-4 space-y-1.5">
+                    {Object.entries(grouped).map(([condition, sources]) => (
+                      <div key={condition} className="flex flex-wrap items-baseline gap-x-2 gap-y-1">
+                        <span className="text-[#3D3D3D] text-xs font-medium capitalize">{condition}:</span>
+                        {sources.map((c, i) => (
+                          <a
+                            key={i}
+                            href={c.url}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="text-xs text-[#1F3A2E] underline underline-offset-2 hover:opacity-60 transition-opacity"
+                          >
+                            {c.source}
+                          </a>
+                        ))}
+                      </div>
+                    ))}
+                  </div>
+                );
+              })()}
 
               {/* Suggested next step */}
               {rd?.next_actions && rd.next_actions.length > 0 && (
@@ -243,6 +272,11 @@ function DashboardContent() {
                 </p>
               )}
             </motion.div>
+
+            {/* Cost transparency */}
+            {rd && rd.urgency !== "wellness" && (
+              <CostTransparency urgency={rd.urgency} recommendedPath={rd.recommended_path} />
+            )}
 
             {/* Care path cards */}
             <motion.div

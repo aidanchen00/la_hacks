@@ -6,6 +6,7 @@ export const revalidate = 0;
 export async function GET() {
   try {
     const runs = getRecentRuns(20);
+    console.log(`HISTORY READ: returning ${runs.length} runs`);
     return NextResponse.json(runs);
   } catch (err) {
     return NextResponse.json({ error: err instanceof Error ? err.message : "DB error" }, { status: 500 });

@@ -30,6 +30,7 @@ export async function GET(
             requires_doctor_approval: Boolean(rd.requires_doctor_approval),
             rationale: rd.rationale,
             disclaimers: JSON.parse(rd.disclaimers || "[]"),
+            citations: JSON.parse(rd.citations || "[]"),
           }
         : null,
       events_count: 0,

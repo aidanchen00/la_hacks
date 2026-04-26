@@ -24,6 +24,12 @@ export interface RunStatus {
   events_count: number;
 }
 
+export interface Citation {
+  condition: string;
+  source: "Mayo Clinic" | "Healthline" | "Cleveland Clinic" | "NIH";
+  url: string;
+}
+
 export interface RoutingDecision {
   run_id: string;
   urgency: "emergency" | "urgent" | "routine" | "wellness";
@@ -35,6 +41,7 @@ export interface RoutingDecision {
   requires_doctor_approval: boolean;
   rationale: string;
   disclaimers: string[];
+  citations: Citation[];
 }
 
 export function postIntake(payload: IntakePayload): Promise<{ run_id: string }> {
@@ -57,7 +64,7 @@ export interface RunSummary {
 }
 
 export function listRuns(): Promise<RunSummary[]> {
-  return request("/runs");
+  return request("/runs", { cache: "no-store" });
 }
 
 export function getSSEUrl(runId: string): string {
