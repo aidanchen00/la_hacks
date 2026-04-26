@@ -292,16 +292,14 @@ LANGUAGE: ${langDirective[sessionLang] ?? langDirective.en}`;
       vad: ctx.proc.userData.vad as silero.VAD,
       stt,
       llm: new openai.LLM({ model: "gpt-4.1-mini" }),
+      // Use the exact same TTS config for every persona (intake / alt-med /
+       // mental). Mental-specific voiceId + voiceSettings overrides were
+       // hanging the TTS pipeline — Dr. Aria would stay in "thinking" forever
+       // because no audio frames came back from Eleven Labs.
       tts: new elevenlabs.TTS({
         apiKey: process.env.ELEVENLABS_API_KEY,
         modelID: "eleven_turbo_v2_5",
-        // Mental-wellness uses a softer, calmer voice (Sarah). Other rooms keep the
-        // existing default voice. Higher stability + lower style = slower, more even
-        // pacing; well-suited for grounding/breathing exercises.
-        voiceId: isMental ? "EXAVITQu4vr4xnSDxMAh" : "Xb7hH8MSUJpSbSDYk0k2",
-        ...(isMental && {
-          voiceSettings: { stability: 0.75, similarity_boost: 0.6, style: 0.15, speed: 0.95, use_speaker_boost: true },
-        }),
+        voiceId: "Xb7hH8MSUJpSbSDYk0k2",
       }),
       // VAD-based turn detection (silero) is far better than STT-based at telling
       // real user speech apart from echoed agent audio bleeding through the mic.
