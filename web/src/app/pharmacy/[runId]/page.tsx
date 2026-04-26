@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, useRef, useCallback } from "react";
+import { useEffect, useMemo, useState, useRef, useCallback } from "react";
 import { useParams, useSearchParams } from "next/navigation";
 import {
   getRun, getBudget, createBudgetCheckout, runRanker, getRanker,
@@ -8,6 +8,7 @@ import {
 } from "@/lib/api";
 import { motion } from "motion/react";
 import LanguagePicker from "@/app/components/LanguagePicker";
+import { useTranslate } from "@/lib/translate";
 
 interface SessionInfo {
   agent: string;
@@ -34,6 +35,7 @@ export default function PharmacyPage() {
   const [checkoutLoading, setCheckoutLoading] = useState(false);
   const [checkoutError, setCheckoutError] = useState<string | null>(null);
   const [intakeSummary, setIntakeSummary] = useState("");
+  const [searchError, setSearchError] = useState<string | null>(null);
   const [rankerItems, setRankerItems] = useState<RankerSelectionItem[]>([]);
   const [rankerRationale, setRankerRationale] = useState("");
   const [rankerLoading, setRankerLoading] = useState(false);
@@ -78,6 +80,7 @@ export default function PharmacyPage() {
 
   const startSearch = async () => {
     setLoading(true);
+    setSearchError(null);
     try {
       const res = await fetch("/api/browser/start", {
         method: "POST",
@@ -85,10 +88,15 @@ export default function PharmacyPage() {
         body: JSON.stringify({ mode: "pharmacy", query }),
       });
       const data = await res.json();
-      setSessions(data.sessions ?? []);
+      const next: SessionInfo[] = data.sessions ?? [];
+      setSessions(next);
       setStarted(true);
-    } catch {
+      if (next.length === 0) {
+        setSearchError("No sessions could be started. The BrowserUse quota may be exhausted — retry in a moment.");
+      }
+    } catch (e) {
       setStarted(true);
+      setSearchError(e instanceof Error ? e.message : "Failed to launch search agents");
     } finally {
       setLoading(false);
     }
@@ -121,7 +129,10 @@ export default function PharmacyPage() {
   useEffect(() => { sessionsRef.current = sessions; }, [sessions]);
   useEffect(() => {
     const stop = () => {
-      const ids = sessionsRef.current.map((s) => s.sessionId).filter(Boolean);
+      // Skip mock fixtures — BrowserUse SDK throws on unknown IDs.
+      const ids = sessionsRef.current
+        .map((s) => s.sessionId)
+        .filter((id) => id && !id.startsWith("mock_") && !id.startsWith("mock-"));
       if (!ids.length) return;
       const body = JSON.stringify({ sessionIds: ids });
       if (typeof navigator !== "undefined" && navigator.sendBeacon) {
@@ -140,9 +151,6 @@ export default function PharmacyPage() {
 
   const statusDot = (s: SessionInfo) =>
     s.done ? "#16A34A" : s.status === "error" ? "#DC2626" : "#D97706";
-
-  const statusLabel = (s: SessionInfo) =>
-    s.done ? "Complete" : s.status === "error" ? "Failed" : "Searching…";
 
   const inStockItems = cart.filter((c) => c.in_stock && c.item_name && c.item_price > 0);
   const cartTotal = inStockItems.reduce((sum, c) => sum + c.item_price, 0);
@@ -209,6 +217,68 @@ export default function PharmacyPage() {
   const checkoutTotal = useRankerCheckout ? rankerSelectedTotal : cartTotal;
   const checkoutDisabled = checkoutItemCount === 0 || checkoutLoading;
 
+  // i18n
+  const STATIC_KEYS = useMemo(() => [
+    "← Dashboard",                                                                  // 0
+    "Pharmacy & Wellness Products",                                                 // 1
+    "✓ Payment Confirmed — Order Verified",                                         // 2
+    "You paid for these",                                                           // 3
+    "items, picked by the agents:",                                                 // 4
+    "Total Paid",                                                                   // 5
+    "Payment cancelled. Your cart is still here — you can review and try again.",   // 6
+    "For educational purposes only. Consult a licensed pharmacist or doctor before purchasing any medication.", // 7
+    "Search Wellness Products",                                                     // 8
+    "What are you looking for?",                                                    // 9
+    "Budget Allocation",                                                            // 10
+    "Total budget",                                                                 // 11
+    "Launching agents…",                                                            // 12
+    "Searching for",                                                                // 13
+    "across pharmacies",                                                            // 14
+    "Searching…",                                                                   // 15
+    "Complete",                                                                     // 16
+    "Failed",                                                                       // 17
+    "Demo Mode",                                                                    // 18
+    "BrowserUse free-tier task quota reached. Showing fixture results so the demo continues.", // 19
+    "Waiting for live session…",                                                    // 20
+    "🤖 Ranker Agent",                                                               // 21
+    "Ranking candidates…",                                                          // 22
+    "Found",                                                                        // 23
+    "Waiting for selection…",                                                       // 24
+    "Selected for checkout",                                                        // 25
+    "No items selected.",                                                           // 26
+    "Selected total",                                                               // 27
+    "Your Cart",                                                                    // 28
+    "of",                                                                           // 29
+    "agent picks in stock",                                                         // 30
+    "No matching product found",                                                    // 31
+    "Out of stock — excluded from checkout",                                        // 32
+    "Total",                                                                        // 33
+    "items",                                                                        // 34
+    "Redirecting to Stripe…",                                                       // 35
+    "No items available to check out",                                              // 36
+    "Checkout Ranker picks",                                                        // 37
+    "Review & Checkout",                                                            // 38
+    "item",                                                                         // 39
+    "Test card: 4242 4242 4242 4242 · any future date · any CVC",                   // 40
+    "Cart is empty. Items will appear here as the agents finish their searches.",   // 41
+    "picked by the agents",                                                         // 42
+    "Retry",                                                                        // 43
+  ], []);
+  const t = useTranslate(STATIC_KEYS);
+  const T = {
+    back: t[0], pageTitle: t[1], paymentConfirmed: t[2], paidFor: t[3], pickedBy: t[4],
+    totalPaid: t[5], cancelled: t[6], disclaimer: t[7], searchHeader: t[8],
+    searchPlaceholder: t[9], budgetHeader: t[10], totalBudget: t[11], launching: t[12],
+    searchingFor: t[13], acrossPharmacies: t[14], searching: t[15], statusComplete: t[16],
+    statusFailed: t[17], demoMode: t[18], demoBlurb: t[19], waitingLive: t[20],
+    rankerHeader: t[21], rankingCands: t[22], found: t[23], waitingSel: t[24],
+    selectedCheckout: t[25], noSelected: t[26], selectedTotal: t[27], yourCart: t[28],
+    ofWord: t[29], inStock: t[30], noProduct: t[31], oos: t[32], totalLabel: t[33],
+    itemsWord: t[34], redirecting: t[35], noToCheckout: t[36], checkoutRanker: t[37],
+    reviewCheckout: t[38], itemSingular: t[39], testCard: t[40], cartEmpty: t[41],
+    pickedByAgents: t[42], retry: t[43],
+  };
+
   const handleCheckout = async () => {
     setCheckoutLoading(true);
     setCheckoutError(null);
@@ -242,35 +312,43 @@ export default function PharmacyPage() {
             href={`/dashboard?run_id=${runId}`}
             className="text-[#1F3A2E] text-sm font-medium hover:opacity-70 transition-opacity min-h-[44px] flex items-center"
           >
-            ← Dashboard
+            {T.back}
           </a>
           <h1 className="font-serif text-[#1F3A2E] text-xl sm:text-2xl font-medium">
-            Pharmacy & Wellness Products
+            {T.pageTitle}
           </h1>
           <div className="ml-auto"><LanguagePicker /></div>
         </div>
 
-        {/* Payment success banner */}
-        {paymentStatus === "success" && inStockItems.length > 0 && (
+        {/* Payment success banner — shows what was actually charged
+            (ranker subset if the user checked out via the ranker, else cart). */}
+        {paymentStatus === "success" && (useRankerCheckout ? rankerSelected.length > 0 : inStockItems.length > 0) && (
           <motion.div
             initial={{ opacity: 0, y: -10 }}
             animate={{ opacity: 1, y: 0 }}
             className="bg-[#DCFCE7] border border-[#16A34A]/30 rounded-2xl px-5 py-4 mb-5"
           >
-            <div className="text-[#16A34A] font-semibold mb-2">✓ Payment Confirmed — Order Verified</div>
+            <div className="text-[#16A34A] font-semibold mb-2">{T.paymentConfirmed}</div>
             <p className="text-[#6B7280] text-sm mb-3">
-              You paid for these {inStockItems.length} items, picked by the agents:
+              {T.paidFor} {useRankerCheckout ? rankerSelected.length : inStockItems.length} {T.pickedBy}
             </p>
             <div className="space-y-1.5">
-              {inStockItems.map((c) => (
-                <div key={c.id} className="flex justify-between text-sm text-[#3D3D3D]">
-                  <span><strong>{c.platform}</strong> · {c.item_name}</span>
-                  <span className="text-[#16A34A] font-semibold">${c.item_price.toFixed(2)}</span>
-                </div>
-              ))}
+              {useRankerCheckout
+                ? rankerSelected.map((r) => (
+                    <div key={`paid-${r.id ?? r.name}`} className="flex justify-between text-sm text-[#3D3D3D]">
+                      <span><strong>{r.source_agent}</strong> · {r.name}</span>
+                      <span className="text-[#16A34A] font-semibold">${r.price.toFixed(2)}</span>
+                    </div>
+                  ))
+                : inStockItems.map((c) => (
+                    <div key={c.id} className="flex justify-between text-sm text-[#3D3D3D]">
+                      <span><strong>{c.platform}</strong> · {c.item_name}</span>
+                      <span className="text-[#16A34A] font-semibold">${c.item_price.toFixed(2)}</span>
+                    </div>
+                  ))}
               <div className="flex justify-between pt-2 mt-1 border-t border-[#16A34A]/20 font-semibold">
-                <span className="text-[#3D3D3D]">Total Paid</span>
-                <span className="text-[#16A34A]">${cartTotal.toFixed(2)}</span>
+                <span className="text-[#3D3D3D]">{T.totalPaid}</span>
+                <span className="text-[#16A34A]">${(useRankerCheckout ? rankerSelectedTotal : cartTotal).toFixed(2)}</span>
               </div>
             </div>
           </motion.div>
@@ -278,13 +356,13 @@ export default function PharmacyPage() {
 
         {paymentStatus === "cancel" && (
           <div className="bg-[#FEE2E2] border border-[#DC2626]/20 rounded-2xl px-5 py-3 mb-5 text-sm text-[#DC2626]">
-            Payment cancelled. Your cart is still here — you can review and try again.
+            {T.cancelled}
           </div>
         )}
 
         {/* Disclaimer */}
         <div className="bg-[#EFEAE0] border border-[#1F3A2E]/10 rounded-2xl px-5 py-3 mb-4 text-sm text-[#6B7280]">
-          For educational purposes only. Consult a licensed pharmacist or doctor before purchasing any medication.
+          {T.disclaimer}
         </div>
 
         {!started ? (
@@ -294,11 +372,11 @@ export default function PharmacyPage() {
             className="bg-[#EFEAE0] rounded-2xl p-6 max-w-md"
           >
             <h2 className="font-serif text-[#1F3A2E] text-xl font-medium mb-6">
-              Search Wellness Products
+              {T.searchHeader}
             </h2>
 
             <div className="mb-5">
-              <label className="block text-sm text-[#6B7280] mb-2">What are you looking for?</label>
+              <label className="block text-sm text-[#6B7280] mb-2">{T.searchPlaceholder}</label>
               <input
                 value={query}
                 onChange={(e) => setQuery(e.target.value)}
@@ -309,10 +387,10 @@ export default function PharmacyPage() {
 
             <div className="mb-6 bg-[#F4F1EA] border border-[#1F3A2E]/10 rounded-xl p-4">
               <div className="text-xs font-semibold text-[#1F3A2E] uppercase tracking-wider mb-3">
-                Budget Allocation
+                {T.budgetHeader}
               </div>
               <div className="flex items-center gap-3 mb-3">
-                <label className="text-sm text-[#6B7280] flex-shrink-0" style={{ minWidth: 80 }}>Total budget</label>
+                <label className="text-sm text-[#6B7280] flex-shrink-0" style={{ minWidth: 80 }}>{T.totalBudget}</label>
                 <input
                   type="number"
                   min={20}
@@ -343,15 +421,26 @@ export default function PharmacyPage() {
               className="w-full bg-[#1F3A2E] text-white rounded-full font-medium text-sm hover:bg-[#2A4D3D] transition-colors disabled:opacity-40 disabled:cursor-not-allowed min-h-[52px]"
             >
               {loading
-                ? "Launching agents…"
+                ? T.launching
                 : `Search CVS · Walgreens · GoodRx ($${totalBudget})`}
             </motion.button>
           </motion.div>
         ) : (
           <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }}>
             <p className="text-[#6B7280] text-sm mb-4">
-              Searching for <strong className="text-[#3D3D3D]">{query}</strong> across pharmacies
+              {T.searchingFor} <strong className="text-[#3D3D3D]">{query}</strong> {T.acrossPharmacies}
             </p>
+            {searchError && (
+              <div className="bg-[#FEE2E2] border border-[#DC2626]/20 rounded-2xl px-5 py-3 mb-4 text-sm text-[#DC2626] flex items-center gap-3">
+                <span className="flex-1">{searchError}</span>
+                <button
+                  onClick={() => { setStarted(false); setSearchError(null); setSessions([]); }}
+                  className="rounded-full px-3 py-1.5 text-xs font-medium cursor-pointer bg-[#DC2626] text-white border-none"
+                >
+                  {T.retry}
+                </button>
+              </div>
+            )}
             <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-4 mb-7">
               {sessions.map((s) => (
                 <div
@@ -364,16 +453,18 @@ export default function PharmacyPage() {
                       style={{ backgroundColor: statusDot(s) }}
                     />
                     <span className="font-medium text-[#1F3A2E] text-sm">{s.agent}</span>
-                    <span className="ml-auto text-xs text-[#6B7280]">{statusLabel(s)}</span>
+                    <span className="ml-auto text-xs text-[#6B7280]">
+                      {s.done ? T.statusComplete : s.status === "error" ? T.statusFailed : T.searching}
+                    </span>
                   </div>
                   {s.mock ? (
                     <div className="h-[340px] flex flex-col items-center justify-center text-center px-4 bg-[#F4F1EA]">
                       <span className="text-[10px] font-bold uppercase tracking-widest px-2.5 py-1 rounded-full bg-[#FEF3C7] text-[#D97706] mb-3">
-                        Demo Mode
+                        {T.demoMode}
                       </span>
                       <p className="text-[#1F3A2E] text-sm font-medium mb-1">{s.agent}</p>
                       <p className="text-[#6B7280] text-xs leading-relaxed max-w-[220px]">
-                        BrowserUse free-tier task quota reached. Showing fixture results so the demo continues.
+                        {T.demoBlurb}
                       </p>
                     </div>
                   ) : s.liveUrl ? (
@@ -385,7 +476,7 @@ export default function PharmacyPage() {
                     />
                   ) : (
                     <div className="h-[340px] flex items-center justify-center text-[#6B7280] text-sm">
-                      {s.error ? `Error: ${s.error}` : "Waiting for live session…"}
+                      {s.error ? `Error: ${s.error}` : T.waitingLive}
                     </div>
                   )}
                 </div>
@@ -403,12 +494,12 @@ export default function PharmacyPage() {
           >
             <div className="flex items-center mb-4">
               <h3 className="font-serif text-[#1F3A2E] text-xl font-medium">
-                🤖 Ranker Agent
+                {T.rankerHeader}
               </h3>
               <span className="ml-auto text-xs text-[#6B7280]">
                 {rankerLoading
-                  ? "Ranking candidates…"
-                  : `${rankerSelected.length} of ${rankerItems.length} picked`}
+                  ? T.rankingCands
+                  : `${rankerSelected.length} ${T.ofWord} ${rankerItems.length}`}
               </span>
             </div>
             {rankerRationale && (
@@ -419,11 +510,11 @@ export default function PharmacyPage() {
             <div className="grid md:grid-cols-2 gap-4">
               <div>
                 <div className="text-xs font-semibold text-[#1F3A2E] uppercase tracking-wider mb-2">
-                  Found ({rankerItems.length})
+                  {T.found} ({rankerItems.length})
                 </div>
                 <div className="space-y-1.5 max-h-[260px] overflow-y-auto pr-1">
                   {rankerItems.length === 0 && (
-                    <div className="text-xs text-[#6B7280]">Waiting for selection…</div>
+                    <div className="text-xs text-[#6B7280]">{T.waitingSel}</div>
                   )}
                   {rankerItems.map((it) => (
                     <div
@@ -448,11 +539,11 @@ export default function PharmacyPage() {
               </div>
               <div>
                 <div className="text-xs font-semibold text-[#16A34A] uppercase tracking-wider mb-2">
-                  Selected for checkout ({rankerSelected.length})
+                  {T.selectedCheckout} ({rankerSelected.length})
                 </div>
                 <div className="space-y-1.5">
                   {rankerSelected.length === 0 && !rankerLoading && (
-                    <div className="text-xs text-[#6B7280]">No items selected.</div>
+                    <div className="text-xs text-[#6B7280]">{T.noSelected}</div>
                   )}
                   {rankerSelected.map((it) => (
                     <div
@@ -474,7 +565,7 @@ export default function PharmacyPage() {
                   ))}
                   {rankerSelected.length > 0 && (
                     <div className="flex justify-between pt-2 mt-1 border-t border-[#16A34A]/30 text-sm font-semibold">
-                      <span className="text-[#3D3D3D]">Selected total</span>
+                      <span className="text-[#3D3D3D]">{T.selectedTotal}</span>
                       <span className="text-[#16A34A]">${rankerSelectedTotal.toFixed(2)}</span>
                     </div>
                   )}
@@ -492,9 +583,9 @@ export default function PharmacyPage() {
             className="bg-[#EFEAE0] rounded-2xl p-6 border border-[#1F3A2E]/15"
           >
             <div className="flex items-center mb-5">
-              <h3 className="font-serif text-[#1F3A2E] text-xl font-medium">Your Cart</h3>
+              <h3 className="font-serif text-[#1F3A2E] text-xl font-medium">{T.yourCart}</h3>
               <span className="ml-auto text-xs text-[#6B7280]">
-                {inStockItems.length} of {cart.length} agent picks in stock
+                {inStockItems.length} {T.ofWord} {cart.length} {T.inStock}
               </span>
             </div>
 
@@ -516,7 +607,7 @@ export default function PharmacyPage() {
                     </div>
                     <div className="min-w-0">
                       <div className="text-sm text-[#3D3D3D] truncate">
-                        {c.item_name ?? "No matching product found"}
+                        {c.item_name ?? T.noProduct}
                       </div>
                       {c.item_description && (
                         <div className="text-xs text-[#6B7280] truncate mt-0.5">
@@ -525,7 +616,7 @@ export default function PharmacyPage() {
                       )}
                       {oos && (
                         <div className="text-xs text-[#DC2626] mt-0.5">
-                          Out of stock — excluded from checkout
+                          {T.oos}
                         </div>
                       )}
                     </div>
@@ -542,7 +633,7 @@ export default function PharmacyPage() {
             </div>
 
             <div className="flex items-center justify-between py-3 border-t border-[#1F3A2E]/15">
-              <span className="text-sm text-[#6B7280]">Total ({inStockItems.length} items)</span>
+              <span className="text-sm text-[#6B7280]">{T.totalLabel} ({inStockItems.length} {T.itemsWord})</span>
               <span className="font-serif text-2xl font-medium text-[#1F3A2E]">${cartTotal.toFixed(2)}</span>
             </div>
 
@@ -558,23 +649,23 @@ export default function PharmacyPage() {
               className="w-full bg-[#1F3A2E] text-white rounded-full font-medium text-sm hover:bg-[#2A4D3D] transition-colors disabled:opacity-40 disabled:cursor-not-allowed min-h-[52px] mt-3"
             >
               {checkoutLoading
-                ? "Redirecting to Stripe…"
+                ? T.redirecting
                 : checkoutItemCount === 0
-                  ? "No items available to check out"
+                  ? T.noToCheckout
                   : useRankerCheckout
-                    ? `Checkout Ranker picks (${checkoutItemCount} item${checkoutItemCount > 1 ? "s" : ""} · $${checkoutTotal.toFixed(2)})`
-                    : `Review & Checkout (${checkoutItemCount} items · $${checkoutTotal.toFixed(2)})`}
+                    ? `${T.checkoutRanker} (${checkoutItemCount} ${checkoutItemCount > 1 ? T.itemsWord : T.itemSingular} · $${checkoutTotal.toFixed(2)})`
+                    : `${T.reviewCheckout} (${checkoutItemCount} ${T.itemsWord} · $${checkoutTotal.toFixed(2)})`}
             </motion.button>
 
             <p className="text-center text-xs text-[#6B7280] mt-3">
-              Test card: 4242 4242 4242 4242 · any future date · any CVC
+              {T.testCard}
             </p>
           </motion.div>
         )}
 
         {started && cart.length === 0 && (
           <div className="bg-[#EFEAE0] border border-dashed border-[#1F3A2E]/15 rounded-2xl px-5 py-6 text-center text-sm text-[#6B7280]">
-            Cart is empty. Items will appear here as the agents finish their searches.
+            {T.cartEmpty}
           </div>
         )}
       </div>

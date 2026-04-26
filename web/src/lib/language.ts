@@ -5,11 +5,16 @@ export const LANG_NAMES: Record<Lang, string> = { en: "English", es: "Español",
 
 const STORAGE_KEY = "prana.lang";
 const EVENT_NAME = "prana:lang-changed";
+const DEFAULT_LANG: Lang = "en";
 
 export function getLang(): Lang {
-  if (typeof window === "undefined") return "en";
+  if (typeof window === "undefined") return DEFAULT_LANG;
   const v = localStorage.getItem(STORAGE_KEY);
-  return v === "es" || v === "zh" ? v : "en";
+  if (v === "en" || v === "es" || v === "zh") return v;
+  // First visit (or stale value): seed English so the picker, persisted
+  // preference, and every useTranslate consumer all agree from frame zero.
+  localStorage.setItem(STORAGE_KEY, DEFAULT_LANG);
+  return DEFAULT_LANG;
 }
 
 export function setLang(lang: Lang): void {

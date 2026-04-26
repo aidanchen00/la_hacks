@@ -63,6 +63,11 @@ body {
 }
 .btn-outline:hover { background: rgba(31, 58, 46, 0.05); }
 
+@keyframes runHighlight {
+  from { background-color: rgba(31, 58, 46, 0.12); }
+  to   { background-color: #EFEAE0; }
+}
+
 .urgency-emergency { color: var(--emergency); }
 .urgency-urgent { color: var(--urgent); }
 .urgency-routine { color: var(--routine); }

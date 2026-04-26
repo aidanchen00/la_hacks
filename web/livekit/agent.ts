@@ -16,7 +16,7 @@ import { fileURLToPath } from "node:url";
 import { z } from "zod";
 import dotenv from "dotenv";
 
-dotenv.config({ path: "../../.env" });
+dotenv.config({ path: "../.env.local" });
 
 // ---------------------------------------------------------------------------
 // Alt-medicine tradition personas (keyed by room name prefix altmed-<key>-)

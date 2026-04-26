@@ -233,10 +233,11 @@ def _parse_result(
                     break
 
         data: Dict[str, Any] = json.loads(text)
-        price = float(data.get("price", 0) or 0)
-        # Strip "$" if present
-        if isinstance(data.get("price"), str):
-            price = float(data["price"].replace("$", "").replace(",", "").strip() or 0)
+        raw_price = data.get("price")
+        if isinstance(raw_price, str):
+            price = float(raw_price.replace("$", "").replace(",", "").strip() or 0)
+        else:
+            price = float(raw_price or 0)
 
         spent = min(price, budget)
         return ShoppingResult(

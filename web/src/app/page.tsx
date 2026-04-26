@@ -17,13 +17,15 @@ import {
 import { Track } from "livekit-client";
 import "@livekit/components-styles";
 import { postIntake, listRuns, type RunSummary } from "@/lib/api";
+import { getStoredNullifier, setStoredNullifier } from "@/lib/auth";
 import { useRouter, useSearchParams } from "next/navigation";
 import { motion } from "motion/react";
 import { Clock, Globe, Settings, Check } from "lucide-react";
+import WorldIDGate from "@/components/WorldIDGate";
 
 type Lang = "en" | "es" | "zh";
 
-const LANG_LABELS: Record<Lang, string> = { en: "EN", es: "ES", zh: "中文" };
+const LANG_LABELS: Record<Lang, string> = { en: "EN", es: "ES", zh: "普通话" };
 
 const TRANSLATIONS = {
   en: {
@@ -76,13 +78,47 @@ const PATH_LABELS: Record<string, string> = {
 
 function RecentSessions({ onClose }: { onClose: () => void }) {
   const [runs, setRuns] = useState<RunSummary[]>([]);
+  const [newRunIds, setNewRunIds] = useState<Set<string>>(new Set());
+  const knownIdsRef = useRef<Set<string>>(new Set());
+  const isInitialRef = useRef(true);
   const router = useRouter();
 
-  useEffect(() => {
-    listRuns()
-      .then((data) => { if (Array.isArray(data)) setRuns(data); })
-      .catch(() => {});
+  const fetchAndMerge = useCallback(async () => {
+    try {
+      const data = await listRuns();
+      if (!Array.isArray(data)) return;
+      const initial = isInitialRef.current;
+      isInitialRef.current = false;
+      if (initial) {
+        setRuns(data);
+        data.forEach(r => knownIdsRef.current.add(r.id));
+        return;
+      }
+      const brandNew = data.filter(r => !knownIdsRef.current.has(r.id));
+      data.forEach(r => knownIdsRef.current.add(r.id));
+      if (brandNew.length === 0) return;
+      setRuns(prev => [...brandNew, ...prev]);
+      const ids = brandNew.map(r => r.id);
+      setNewRunIds(prev => new Set([...prev, ...ids]));
+      setTimeout(() => {
+        setNewRunIds(prev => {
+          const next = new Set(prev);
+          ids.forEach(id => next.delete(id));
+          return next;
+        });
+      }, 5000);
+    } catch { /* ignore */ }
   }, []);
+
+  useEffect(() => {
+    fetchAndMerge();
+    const intervalId = setInterval(() => {
+      if (document.visibilityState !== "hidden") fetchAndMerge();
+    }, 3000);
+    const onVisible = () => { if (document.visibilityState === "visible") fetchAndMerge(); };
+    document.addEventListener("visibilitychange", onVisible);
+    return () => { clearInterval(intervalId); document.removeEventListener("visibilitychange", onVisible); };
+  }, [fetchAndMerge]);
 
   return (
     <motion.div
@@ -123,6 +159,7 @@ function RecentSessions({ onClose }: { onClose: () => void }) {
                   key={run.id}
                   onClick={() => router.push(`/dashboard?run_id=${run.id}`)}
                   className="w-full text-left bg-[#EFEAE0] rounded-2xl p-4 border border-[#1F3A2E]/10 hover:border-[#1F3A2E]/30 transition-colors min-h-[72px]"
+                  style={newRunIds.has(run.id) ? { animation: "runHighlight 5s ease-out forwards" } : undefined}
                 >
                   <div className="flex items-start justify-between gap-3">
                     <p className="text-[#3D3D3D] text-sm leading-relaxed flex-1 line-clamp-2">
@@ -416,6 +453,8 @@ function VoiceIntake({ onShowHistory, language, onLanguageChange }: {
   onLanguageChange: (l: Lang) => void;
 }) {
   const [langOpen, setLangOpen] = useState(false);
+  const [verified, setVerified] = useState(false);
+  const [nullifierHash, setNullifierHash] = useState<string>("");
 
   // tokenSource is stable per mount — component remounts (via key) when language changes
   const tokenSource = useMemo(
@@ -431,6 +470,30 @@ function VoiceIntake({ onShowHistory, language, onLanguageChange }: {
   const [submitting, setSubmitting] = useState(false);
   const router = useRouter();
 
+  // Persist verification across page navigations.
+  // Dev bypass: ?bypass=1 skips World ID (use while their bridge is down).
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    if (new URLSearchParams(window.location.search).get("bypass") === "1") {
+      setVerified(true);
+      setNullifierHash("dev-bypass");
+      sessionStorage.setItem("prana_verified", "dev-bypass");
+      return;
+    }
+    // Prefer the durable login (localStorage) so a logged-in user doesn't
+    // re-verify every tab — fall back to the legacy session-only key.
+    const stored = getStoredNullifier();
+    if (stored) { setVerified(true); setNullifierHash(stored); }
+  }, []);
+
+  const handleVerified = useCallback((hash: string) => {
+    setVerified(true);
+    setNullifierHash(hash);
+    // Persist to both stores: localStorage backs the /profile page across
+    // sessions; sessionStorage stays for backwards compat with other surfaces.
+    setStoredNullifier(hash);
+  }, []);
+
   const handleIntakeComplete = useCallback(async (data: IntakeData) => {
     setSubmitting(true);
     try {
@@ -438,6 +501,7 @@ function VoiceIntake({ onShowHistory, language, onLanguageChange }: {
         transcript: data.symptoms?.join(", ") ?? "",
         summary: data.summary ?? "Intake completed via voice session.",
         voice_session_id: (session as { roomName?: string }).roomName ?? undefined,
+        nullifier_hash: nullifierHash || undefined,
       });
 
       fetch("/api/composio/sheets", {
@@ -605,14 +669,18 @@ function VoiceIntake({ onShowHistory, language, onLanguageChange }: {
           style={{ paddingBottom: "max(2.5rem, env(safe-area-inset-bottom, 2.5rem))" }}
         >
           <div className="max-w-sm md:max-w-md mx-auto space-y-3">
-            <motion.button
-              onClick={() => setStarted(true)}
-              whileHover={{ scale: 1.01 }}
-              whileTap={{ scale: 0.99 }}
-              className="w-full bg-[#1F3A2E] text-white rounded-full font-medium text-lg hover:bg-[#2A4D3D] transition-colors min-h-[56px]"
-            >
-              {t.startTalking}
-            </motion.button>
+            {verified ? (
+              <motion.button
+                onClick={() => setStarted(true)}
+                whileHover={{ scale: 1.01 }}
+                whileTap={{ scale: 0.99 }}
+                className="w-full bg-[#1F3A2E] text-white rounded-full font-medium text-lg hover:bg-[#2A4D3D] transition-colors min-h-[56px]"
+              >
+                {t.startTalking}
+              </motion.button>
+            ) : (
+              <WorldIDGate onVerified={handleVerified} />
+            )}
             <div className="flex items-center justify-center gap-4">
               <button
                 onClick={() => { setTextMode(true); setStarted(true); }}

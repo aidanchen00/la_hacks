@@ -27,7 +27,11 @@ from uuid import uuid4
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
 from dotenv import load_dotenv
-load_dotenv(Path(__file__).resolve().parents[2] / ".env")
+# Single source of truth is web/.env.local (shared with the Next.js app); the
+# repo-root .env stays as a fallback. Real shell env always wins.
+_REPO_ROOT = Path(__file__).resolve().parents[2]
+load_dotenv(_REPO_ROOT / "web" / ".env.local", override=False)
+load_dotenv(_REPO_ROOT / ".env", override=False)
 
 import httpx
 import openai
@@ -108,7 +112,6 @@ def _appointment_address(seed: str) -> str:
 
 
 APPOINTMENT_AGENTS = {
-    "zocdoc":       _appointment_address("zocdoc-seller-seed-la-hacks-2026"),
     "healthgrades": _appointment_address("healthgrades-seller-seed-la-hacks-2026"),
     "solv":         _appointment_address("solv-seller-seed-la-hacks-2026"),
 }
@@ -175,12 +178,13 @@ def _get_openai_client() -> openai.AsyncOpenAI:
         return _openai_client
     api_key = os.getenv("OPENAI_API_KEY")
     if not api_key:
-        # Defensive reload — handles cases where the process started before .env was populated
-        load_dotenv(Path(__file__).resolve().parents[2] / ".env", override=False)
+        # Defensive reload — handles cases where the process started before env was populated
+        load_dotenv(_REPO_ROOT / "web" / ".env.local", override=False)
+        load_dotenv(_REPO_ROOT / ".env", override=False)
         api_key = os.getenv("OPENAI_API_KEY")
     if not api_key:
         raise RuntimeError(
-            "OPENAI_API_KEY not set. Add it to /Users/aidanchen/projects/la_hacks/.env "
+            "OPENAI_API_KEY not set. Add it to web/.env.local "
             "and restart the agent (python agents/run_all.py)."
         )
     _openai_client = openai.AsyncOpenAI(api_key=api_key)
@@ -834,7 +838,7 @@ async def handle_specialist_result(ctx: Context, sender: str, msg: SpecialistRes
         return
 
     summary_lines = [
-        f"💊 Shopping Complete — {len(items)} products found across CVS, Walgreens, GoodRx & Amazon:\n"
+        f"💊 Shopping Complete — {len(items)} products found across CVS, Walgreens & GoodRx:\n"
     ]
     for item in items:
         status = "✅ In Stock" if item.get("in_stock") else "❌ Out of Stock"

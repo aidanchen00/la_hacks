@@ -1,13 +1,15 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useSearchParams, useRouter } from "next/navigation";
 import { getRun, listRuns, type RunStatus, type RoutingDecision, type RunSummary } from "@/lib/api";
 import { FIXTURE_ROUTING_DECISION } from "@/fixtures";
 import { Suspense } from "react";
 import { motion } from "motion/react";
-import { Plus, Bookmark, Phone, Navigation, AlertCircle } from "lucide-react";
+import { Plus, Bookmark, AlertCircle } from "lucide-react";
 import LanguagePicker from "@/app/components/LanguagePicker";
+import CostTransparency from "@/components/CostTransparency";
+import { useTranslate } from "@/lib/translate";
 
 const PATH_CONFIG = {
   doctor: {
@@ -66,10 +68,16 @@ function RouteCard({
   path,
   onClick,
   recommended,
+  label,
+  desc,
+  recommendedLabel,
 }: {
   path: keyof typeof PATH_CONFIG;
   onClick: () => void;
   recommended?: boolean;
+  label: string;
+  desc: string;
+  recommendedLabel: string;
 }) {
   const cfg = PATH_CONFIG[path];
   return (
@@ -87,12 +95,12 @@ function RouteCard({
         <span className="text-2xl">{cfg.icon}</span>
         {recommended && (
           <span className="text-xs font-bold text-[#1F3A2E] bg-[#1F3A2E]/10 rounded-full px-2.5 py-1 uppercase tracking-wide">
-            Recommended
+            {recommendedLabel}
           </span>
         )}
       </div>
-      <p className="font-serif text-[#1F3A2E] text-lg font-medium mb-1">{cfg.label}</p>
-      <p className="text-[#6B7280] text-sm leading-relaxed">{cfg.desc}</p>
+      <p className="font-serif text-[#1F3A2E] text-lg font-medium mb-1">{label}</p>
+      <p className="text-[#6B7280] text-sm leading-relaxed">{desc}</p>
     </motion.button>
   );
 }
@@ -142,6 +150,79 @@ function DashboardContent() {
 
   const rd: RoutingDecision | null = run?.routing_decision ?? null;
 
+  // Static UI strings — translated as a single batch and re-translated when the language changes.
+  const STATIC_KEYS = useMemo(
+    () => [
+      "← New Intake",                                                                 // 0
+      "Knowledge Graph →",                                                            // 1
+      "Analyzing your intake…",                                                       // 2
+      "Your intake history",                                                          // 3
+      "Pick a past session to view its care plan, or start a new intake.",            // 4
+      "No past intakes yet.",                                                         // 5
+      "Start a voice or text intake to get a personalized care plan.",                // 6
+      "Start Intake",                                                                 // 7
+      "Loading…",                                                                     // 8
+      "Analyzing…",                                                                   // 9
+      "Your care plan is ready.",                                                     // 10
+      "Your intake is being processed…",                                              // 11
+      "Suggested next steps",                                                         // 12
+      "What you shared",                                                              // 13
+      "Choose your care path",                                                        // 14
+      "New conversation",                                                             // 15
+      "View history",                                                                 // 16
+      "Recommended",                                                                  // 17
+      "Pending",                                                                      // 18
+      "Medical Emergency",                                                            // 19
+      "Call 911 or go to the nearest emergency room immediately",                     // 20
+      "Call 911 Now",                                                                 // 21
+      "Doctor Appointment",                                                           // 22
+      "Search for available providers and book appointments",                         // 23
+      "Pharmacy & Wellness",                                                          // 24
+      "Find medications and OTC wellness products",                                   // 25
+      "Mental Wellness",                                                              // 26
+      "Memory-world experience and emotional support",                                // 27
+      "Alternative Medicine",                                                         // 28
+      "Explore traditional healing practices globally",                               // 29
+      "Self-Care Resources",                                                          // 30
+      "Education and wellness lifestyle recommendations",                             // 31
+      "Intake session",                                                               // 32
+    ],
+    [],
+  );
+  const t = useTranslate(STATIC_KEYS);
+  const T = {
+    newIntake: t[0], graph: t[1], analyzingIntake: t[2], intakeHistory: t[3],
+    pickPast: t[4], noPast: t[5], startIntakeBlurb: t[6], startIntakeBtn: t[7],
+    loading: t[8], analyzing: t[9], planReady: t[10], processingIntake: t[11],
+    nextSteps: t[12], whatYouShared: t[13], choosePath: t[14], newConv: t[15],
+    viewHistory: t[16], recommended: t[17], pending: t[18], emergencyHeader: t[19],
+    emergencyMsg: t[20], call911: t[21],
+    intakeSessionFallback: t[32],
+  };
+  const PATH_T: Record<keyof typeof PATH_CONFIG, { label: string; desc: string }> = {
+    doctor: { label: t[22], desc: t[23] },
+    pharmacy: { label: t[24], desc: t[25] },
+    mental_health: { label: t[26], desc: t[27] },
+    alt_medicine: { label: t[28], desc: t[29] },
+    self_care: { label: t[30], desc: t[31] },
+  };
+
+  // Dynamic content — summary, next actions, disclaimers, intake summary.
+  const dynamicTexts = useMemo(() => {
+    const arr: string[] = [];
+    if (rd?.summary) arr.push(rd.summary);
+    arr.push(...(rd?.next_actions ?? []));
+    arr.push(...(rd?.disclaimers ?? []));
+    if (run?.intake_summary) arr.push(run.intake_summary);
+    return arr;
+  }, [rd?.summary, rd?.next_actions, rd?.disclaimers, run?.intake_summary]);
+  const tDynamic = useTranslate(dynamicTexts);
+  let cursor = 0;
+  const tSummary = rd?.summary ? tDynamic[cursor++] : null;
+  const tNextActions = (rd?.next_actions ?? []).map(() => tDynamic[cursor++]);
+  const tDisclaimers = (rd?.disclaimers ?? []).map(() => tDynamic[cursor++]);
+  const tIntakeSummary = run?.intake_summary ? tDynamic[cursor++] : null;
+
   const navigate = (path: string) => {
     const routes: Record<string, string> = {
       doctor: `/doctor/${runId}`,
@@ -160,14 +241,14 @@ function DashboardContent() {
         <div className="bg-[#DC2626] text-white py-4 px-4 sm:px-6 text-center">
           <div className="max-w-2xl mx-auto flex items-center justify-center gap-2 mb-2">
             <AlertCircle className="w-5 h-5" />
-            <span className="font-bold uppercase tracking-wide">Medical Emergency</span>
+            <span className="font-bold uppercase tracking-wide">{T.emergencyHeader}</span>
           </div>
-          <p className="text-sm mb-3">Call 911 or go to the nearest emergency room immediately</p>
+          <p className="text-sm mb-3">{T.emergencyMsg}</p>
           <a
             href="tel:911"
             className="inline-flex items-center justify-center bg-white text-[#DC2626] font-bold rounded-full px-8 min-h-[52px] text-base hover:bg-red-50 transition-colors"
           >
-            Call 911 Now
+            {T.call911}
           </a>
         </div>
       )}
@@ -176,15 +257,21 @@ function DashboardContent() {
         {/* Header */}
         <div className="flex items-center gap-4 mb-8">
           <a href="/" className="text-[#1F3A2E] text-sm font-medium hover:opacity-70 transition-opacity">
-            ← New Intake
+            {T.newIntake}
           </a>
           <div className="ml-auto flex items-center gap-2">
             <LanguagePicker />
             <button
+              onClick={() => router.push("/profile")}
+              className="text-sm text-[#6B7280] border border-[#1F3A2E]/20 rounded-full px-4 py-2 hover:border-[#1F3A2E]/40 transition-colors"
+            >
+              Profile
+            </button>
+            <button
               onClick={() => router.push("/graph")}
               className="text-sm text-[#6B7280] border border-[#1F3A2E]/20 rounded-full px-4 py-2 hover:border-[#1F3A2E]/40 transition-colors"
             >
-              Knowledge Graph →
+              {T.graph}
             </button>
           </div>
         </div>
@@ -196,44 +283,46 @@ function DashboardContent() {
             className="flex items-center justify-center min-h-[70vh]"
           >
             <p className="font-serif text-[#1F3A2E] text-2xl font-medium text-center">
-              Analyzing your intake…
+              {T.analyzingIntake}
             </p>
           </motion.div>
         ) : !run && !runId ? (
           <div>
             <h1 className="font-serif text-[#1F3A2E] text-2xl sm:text-[36px] leading-[1.3] font-medium mb-3">
-              Your intake history
+              {T.intakeHistory}
             </h1>
             <p className="text-[#6B7280] mb-8">
-              Pick a past session to view its care plan, or start a new intake.
+              {T.pickPast}
             </p>
 
             {pastLoading ? (
-              <p className="text-[#6B7280] text-sm">Loading…</p>
+              <p className="text-[#6B7280] text-sm">{T.loading}</p>
             ) : pastRuns.length === 0 ? (
               <div className="bg-[#EFEAE0] rounded-2xl p-8 text-center border border-[#1F3A2E]/10">
-                <p className="font-serif text-[#1F3A2E] text-xl mb-3">No past intakes yet.</p>
+                <p className="font-serif text-[#1F3A2E] text-xl mb-3">{T.noPast}</p>
                 <p className="text-[#6B7280] text-sm mb-6">
-                  Start a voice or text intake to get a personalized care plan.
+                  {T.startIntakeBlurb}
                 </p>
                 <a
                   href="/"
                   className="inline-block bg-[#1F3A2E] text-white py-3 px-8 rounded-full font-medium hover:bg-[#2A4D3D] transition-colors"
                 >
-                  Start Intake
+                  {T.startIntakeBtn}
                 </a>
               </div>
             ) : (
               <div className="space-y-3">
                 {pastRuns.map((r) => {
-                  const label = r.rd_summary ?? r.intake_summary ?? r.instruction ?? "Intake session";
+                  const label = r.rd_summary ?? r.intake_summary ?? r.instruction ?? T.intakeSessionFallback;
                   const date = new Date(r.created_at).toLocaleDateString(undefined, {
                     month: "short", day: "numeric", year: "numeric",
                   });
                   const cfg = r.urgency ? urgencyConfig[r.urgency] : null;
                   const pathLabel = r.recommended_path
-                    ? PATH_CONFIG[r.recommended_path as keyof typeof PATH_CONFIG]?.label ?? r.recommended_path.replace(/_/g, " ")
-                    : "Pending";
+                    ? PATH_T[r.recommended_path as keyof typeof PATH_CONFIG]?.label
+                      ?? PATH_CONFIG[r.recommended_path as keyof typeof PATH_CONFIG]?.label
+                      ?? r.recommended_path.replace(/_/g, " ")
+                    : T.pending;
                   return (
                     <motion.button
                       key={r.id}
@@ -275,22 +364,50 @@ function DashboardContent() {
               {rd && <UrgencyBadge urgency={rd.urgency} />}
               {run?.status === "pending" && (
                 <div className="inline-flex items-center gap-2 px-4 py-2 rounded-full bg-[#F3F4F6] text-[#6B7280] text-sm font-bold uppercase tracking-wide">
-                  Analyzing…
+                  {T.analyzing}
                 </div>
               )}
 
-              <h1 className="font-serif text-[#1F3A2E] text-2xl sm:text-[36px] leading-[1.3] font-medium mt-4 mb-4">
-                {rd?.summary ?? (run?.intake_summary ? "Your care plan is ready." : "Your intake is being processed…")}
+              <h1 className="font-serif text-[#1F3A2E] text-2xl sm:text-[36px] leading-[1.3] font-medium mt-4 mb-3">
+                {tSummary ?? (run?.intake_summary ? T.planReady : T.processingIntake)}
               </h1>
+
+              {/* Citations */}
+              {rd?.citations && rd.citations.length > 0 && (() => {
+                const grouped = rd.citations.reduce<Record<string, typeof rd.citations>>((acc, c) => {
+                  (acc[c.condition] ??= []).push(c);
+                  return acc;
+                }, {});
+                return (
+                  <div className="mb-4 space-y-1.5">
+                    {Object.entries(grouped).map(([condition, sources]) => (
+                      <div key={condition} className="flex flex-wrap items-baseline gap-x-2 gap-y-1">
+                        <span className="text-[#3D3D3D] text-xs font-medium capitalize">{condition}:</span>
+                        {sources.map((c, i) => (
+                          <a
+                            key={i}
+                            href={c.url}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="text-xs text-[#1F3A2E] underline underline-offset-2 hover:opacity-60 transition-opacity"
+                          >
+                            {c.source}
+                          </a>
+                        ))}
+                      </div>
+                    ))}
+                  </div>
+                );
+              })()}
 
               {/* Suggested next step */}
               {rd?.next_actions && rd.next_actions.length > 0 && (
                 <div className="bg-[#EFEAE0] rounded-2xl p-5 border-l-4 border-[#1F3A2E]">
-                  <p className="text-[#1F3A2E] font-medium mb-2">Suggested next steps</p>
+                  <p className="text-[#1F3A2E] font-medium mb-2">{T.nextSteps}</p>
                   <ul className="space-y-1.5">
                     {rd.next_actions.map((action, i) => (
                       <li key={i} className="text-[#3D3D3D] text-sm leading-relaxed">
-                        • {action}
+                        • {tNextActions[i] ?? action}
                       </li>
                     ))}
                   </ul>
@@ -300,34 +417,42 @@ function DashboardContent() {
               {/* Summary details */}
               {run?.intake_summary && !rd && (
                 <div className="bg-[#EFEAE0] rounded-2xl p-5 border-l-4 border-[#1F3A2E]">
-                  <p className="text-[#1F3A2E] font-medium mb-1">What you shared</p>
-                  <p className="text-[#3D3D3D] text-base leading-relaxed">{run.intake_summary}</p>
+                  <p className="text-[#1F3A2E] font-medium mb-1">{T.whatYouShared}</p>
+                  <p className="text-[#3D3D3D] text-base leading-relaxed">{tIntakeSummary ?? run.intake_summary}</p>
                 </div>
               )}
 
               {/* Disclaimers */}
               {rd?.disclaimers && rd.disclaimers.length > 0 && (
                 <p className="text-[#6B7280] text-xs mt-4 italic">
-                  {rd.disclaimers.join(" ")}
+                  {tDisclaimers.join(" ")}
                 </p>
               )}
             </motion.div>
+
+            {/* Cost transparency */}
+            {rd && rd.urgency !== "wellness" && (
+              <CostTransparency urgency={rd.urgency} recommendedPath={rd.recommended_path} />
+            )}
 
             {/* Care path cards */}
             <motion.div
               initial={{ opacity: 0, y: 20 }}
               animate={{ opacity: 1, y: 0 }}
               transition={{ delay: 0.1 }}
-              className="mb-10"
+              className="mb-24"
             >
               <h2 className="font-serif text-[#1F3A2E] text-2xl font-medium mb-4">
-                Choose your care path
+                {T.choosePath}
               </h2>
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 sm:gap-4">
                 {(["doctor", "pharmacy", "mental_health", "alt_medicine"] as const).map((path) => (
                   <RouteCard
                     key={path}
                     path={path}
+                    label={PATH_T[path].label}
+                    desc={PATH_T[path].desc}
+                    recommendedLabel={T.recommended}
                     recommended={rd?.recommended_path === path}
                     onClick={() => navigate(path)}
                   />
@@ -335,55 +460,6 @@ function DashboardContent() {
               </div>
             </motion.div>
 
-            {/* Find care nearby section */}
-            <motion.div
-              initial={{ opacity: 0, y: 20 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{ delay: 0.2 }}
-              className="mb-24"
-            >
-              <h2 className="font-serif text-[#1F3A2E] text-2xl font-medium mb-4">
-                Find care nearby
-              </h2>
-              <div className="bg-[#EFEAE0] rounded-2xl p-6 space-y-4">
-                <div className="flex items-center justify-between pb-4 border-b border-[#1F3A2E]/10">
-                  <div>
-                    <p className="text-[#1F3A2E] font-medium">Doctor Search</p>
-                    <p className="text-[#6B7280] text-sm">ZocDoc, Healthgrades, Solv</p>
-                  </div>
-                  <button
-                    onClick={() => navigate("doctor")}
-                    className="p-2 rounded-full bg-[#1F3A2E] text-white hover:bg-[#2A4D3D] transition-colors"
-                  >
-                    <Phone className="w-4 h-4" />
-                  </button>
-                </div>
-                <div className="flex items-center justify-between pb-4 border-b border-[#1F3A2E]/10">
-                  <div>
-                    <p className="text-[#1F3A2E] font-medium">Pharmacy Search</p>
-                    <p className="text-[#6B7280] text-sm">CVS · Walgreens · GoodRx</p>
-                  </div>
-                  <button
-                    onClick={() => navigate("pharmacy")}
-                    className="p-2 rounded-full bg-[#1F3A2E] text-white hover:bg-[#2A4D3D] transition-colors"
-                  >
-                    <Navigation className="w-4 h-4" />
-                  </button>
-                </div>
-                <div className="flex items-center justify-between">
-                  <div>
-                    <p className="text-[#1F3A2E] font-medium">Knowledge Graph</p>
-                    <p className="text-[#6B7280] text-sm">Your health knowledge map</p>
-                  </div>
-                  <button
-                    onClick={() => router.push("/graph")}
-                    className="p-2 rounded-full bg-[#1F3A2E] text-white hover:bg-[#2A4D3D] transition-colors"
-                  >
-                    <Navigation className="w-4 h-4" />
-                  </button>
-                </div>
-              </div>
-            </motion.div>
           </>
         )}
       </div>
@@ -399,14 +475,14 @@ function DashboardContent() {
             className="flex-1 flex items-center justify-center gap-2 bg-transparent border-2 border-[#1F3A2E] text-[#1F3A2E] py-3 px-5 rounded-full font-medium text-sm hover:bg-[#1F3A2E]/5 transition-colors min-h-[48px]"
           >
             <Plus className="w-4 h-4" />
-            <span>New conversation</span>
+            <span>{T.newConv}</span>
           </button>
           <button
             onClick={() => router.push("/?history=true")}
             className="flex-1 flex items-center justify-center gap-2 bg-[#1F3A2E] text-white py-3 px-5 rounded-full font-medium text-sm hover:bg-[#2A4D3D] transition-colors min-h-[48px]"
           >
             <Bookmark className="w-4 h-4" />
-            <span>View history</span>
+            <span>{T.viewHistory}</span>
           </button>
         </div>
       </div>

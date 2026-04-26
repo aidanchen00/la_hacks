@@ -84,9 +84,7 @@ BATCH1_AGENTS = {
     "walgreens": WALGREENS_ADDRESS,
     "goodrx":   GOODRX_ADDRESS,
 }
-BATCH2_AGENTS = {
-    "amazon": AMAZON_ADDRESS,
-}
+BATCH2_AGENTS: Dict[str, str] = {}
 ALL_AGENTS = {**BATCH1_AGENTS, **BATCH2_AGENTS}
 
 # In-memory session state: run_id → session data
@@ -372,21 +370,23 @@ async def handle_shopping_result(ctx: Context, sender: str, msg: ShoppingResult)
     session["batch1_pending"].discard(msg.agent_name)
     session["batch2_pending"].discard(msg.agent_name)
 
-    # When batch 1 finishes, stop those sessions and start Amazon
+    # When batch 1 finishes, stop those sessions and dispatch batch 2 (if any)
     if not session["batch1_pending"] and not session["batch1_done"]:
         session["batch1_done"] = True
         await _stop_all_browser_sessions()
-        logger.info(f"[budget] Batch 1 complete for run {run_id[:8]}, starting Amazon")
-        alloc = BudgetAllocation(
-            run_id=run_id,
-            query=session["query"],
-            allocated_usd=session["per_agent"],
-            total_budget_usd=session["total"],
-            budget_agent_address=ctx.agent.address,
-        )
-        await ctx.send(AMAZON_ADDRESS, alloc)
+        if BATCH2_AGENTS:
+            logger.info(f"[budget] Batch 1 complete for run {run_id[:8]}, starting batch 2")
+            for agent_name, address in BATCH2_AGENTS.items():
+                alloc = BudgetAllocation(
+                    run_id=run_id,
+                    query=session["query"],
+                    allocated_usd=session["per_agent"],
+                    total_budget_usd=session["total"],
+                    budget_agent_address=ctx.agent.address,
+                )
+                await ctx.send(address, alloc)
 
-    # When all 4 agents done → create Stripe checkout
+    # When all agents done → create Stripe checkout
     if not session["batch1_pending"] and not session["batch2_pending"]:
         await _finalize_run(ctx, run_id, session)
 

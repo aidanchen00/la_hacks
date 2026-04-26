@@ -14,6 +14,7 @@ export interface IntakePayload {
   summary: string;
   voice_session_id?: string;
   user_email?: string;
+  nullifier_hash?: string;
 }
 
 export interface RunStatus {
@@ -22,6 +23,12 @@ export interface RunStatus {
   intake_summary: string | null;
   routing_decision: RoutingDecision | null;
   events_count: number;
+}
+
+export interface Citation {
+  condition: string;
+  source: string;
+  url: string;
 }
 
 export interface RoutingDecision {
@@ -35,6 +42,7 @@ export interface RoutingDecision {
   requires_doctor_approval: boolean;
   rationale: string;
   disclaimers: string[];
+  citations?: Citation[];
   // Per-session search context produced by the router LLM
   specialty?: string | null;
   location?: string | null;
@@ -61,7 +69,7 @@ export interface RunSummary {
 }
 
 export function listRuns(): Promise<RunSummary[]> {
-  return fetch("/api/runs").then((r) => {
+  return fetch("/api/runs", { cache: "no-store" }).then((r) => {
     if (!r.ok) throw new Error(`/api/runs → ${r.status}`);
     return r.json();
   });
@@ -113,6 +121,7 @@ export function getBudget(runId: string): Promise<BudgetStatus> {
 }
 
 export interface CheckoutItem {
+  id?: number;
   name: string;
   platform: string;
   price: number;
@@ -194,5 +203,64 @@ export function createDoctorCheckout(runId: string, items: DoctorCheckoutItem[])
   return request("/doctor/checkout", {
     method: "POST",
     body: JSON.stringify({ run_id: runId, items }),
+  });
+}
+
+// ---------------------------------------------------------------------------
+// Profile (anonymous, keyed on World ID nullifier hash)
+// ---------------------------------------------------------------------------
+
+export interface UserProfile {
+  nullifier_hash: string;
+  display_name: string | null;
+  age: number | null;
+  sex: string | null;
+  gender: string | null;
+  weight_lbs: number | null;
+  height_in: number | null;
+  allergies: string;
+  conditions: string;
+  medications: string;
+  insurance_provider: string | null;
+  insurance_member_id: string | null;
+  insurance_group_id: string | null;
+  deductible_total_usd: number;
+  deductible_used_usd: number;
+  plan_year_start: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface DeductiblePayment {
+  id: number;
+  nullifier_hash: string;
+  run_id: string | null;
+  amount_usd: number;
+  source: string | null;          // 'doctor' | 'pharmacy' | ...
+  stripe_session_id: string | null;
+  created_at: string;
+}
+
+export interface ProfileResponse {
+  nullifier_hash: string;
+  profile: UserProfile | null;
+  deductible_history: DeductiblePayment[];
+}
+
+export type ProfileEditableFields = Partial<Pick<UserProfile,
+  | "display_name" | "age" | "sex" | "gender" | "weight_lbs" | "height_in"
+  | "allergies" | "conditions" | "medications"
+  | "insurance_provider" | "insurance_member_id" | "insurance_group_id"
+  | "deductible_total_usd" | "plan_year_start"
+>>;
+
+export function getProfile(nullifierHash: string): Promise<ProfileResponse> {
+  return request(`/profile/${encodeURIComponent(nullifierHash)}`);
+}
+
+export function updateProfile(nullifierHash: string, fields: ProfileEditableFields): Promise<{ nullifier_hash: string; profile: UserProfile }> {
+  return request(`/profile/${encodeURIComponent(nullifierHash)}`, {
+    method: "PUT",
+    body: JSON.stringify(fields),
   });
 }

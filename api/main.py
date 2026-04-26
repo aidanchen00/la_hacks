@@ -15,8 +15,17 @@ import json
 import logging
 import os
 from contextlib import asynccontextmanager
+from pathlib import Path
 from typing import Any, AsyncGenerator, Dict, Optional
 from uuid import uuid4
+
+# Load env BEFORE importing api.config (which reads os.getenv at import time).
+# web/.env.local is the single source of truth, shared with the Next.js app;
+# repo-root .env stays as a fallback. Real shell env always wins.
+from dotenv import load_dotenv
+_REPO_ROOT = Path(__file__).resolve().parent.parent
+load_dotenv(_REPO_ROOT / "web" / ".env.local", override=False)
+load_dotenv(_REPO_ROOT / ".env", override=False)
 
 import httpx
 import stripe
@@ -64,6 +73,11 @@ from api.db import (
     get_cart_items,
     get_ranker_selections,
     mark_selections_booked,
+    get_profile,
+    upsert_profile,
+    get_run_nullifier,
+    record_deductible_payment,
+    get_deductible_history,
 )
 from api.routing import route_intake
 
@@ -111,20 +125,31 @@ async def intake(request: Request):
     summary = body.get("summary", "")
     voice_session_id = body.get("voice_session_id", "")
     user_email = body.get("user_email", "")
+    nullifier_hash = body.get("nullifier_hash") or None
 
     run_id = str(uuid4())
-    insert_run(run_id, transcript, summary)
+    insert_run(run_id, transcript, summary, nullifier_hash)
     logger.info(f"[intake] run {run_id[:8]} created")
 
     # Route asynchronously so we return the run_id immediately
-    asyncio.create_task(_route_and_save(run_id, transcript, summary))
+    asyncio.create_task(_route_and_save(run_id, transcript, summary, nullifier_hash))
 
     return {"run_id": run_id}
 
 
-async def _route_and_save(run_id: str, transcript: str, summary: str) -> None:
+async def _route_and_save(
+    run_id: str,
+    transcript: str,
+    summary: str,
+    nullifier_hash: Optional[str] = None,
+) -> None:
     try:
-        decision = await route_intake(transcript, summary)
+        # Pull the profile (if any) so the routing LLM can personalize advice.
+        # We deliberately skip lookups for the dev bypass token.
+        profile = None
+        if nullifier_hash and nullifier_hash != "dev-bypass":
+            profile = get_profile(nullifier_hash)
+        decision = await route_intake(transcript, summary, profile=profile)
         decision["run_id"] = run_id
         upsert_routing_decision(decision)
         insert_agent_event(run_id, "orchestrator", "routing_complete", decision)
@@ -244,13 +269,63 @@ async def stripe_webhook(request: Request):
 
     if event.get("type") == "checkout.session.completed":
         session_data = event["data"]["object"]
-        run_id = (session_data.get("metadata") or {}).get("run_id", "")
+        meta = session_data.get("metadata") or {}
+        run_id = meta.get("run_id", "")
+        source = meta.get("source", "navigation")  # 'budget_agent' | 'doctor_ranker' | default
+        # 'budget_agent' → pharmacy purchases, 'doctor_ranker' → doctor visits.
+        deductible_source = "pharmacy" if source == "budget_agent" else "doctor" if source == "doctor_ranker" else source
+        amount_total_cents = int(session_data.get("amount_total") or 0)
+        amount_usd = amount_total_cents / 100.0
+        stripe_session_id = session_data.get("id")
+
         if run_id:
-            insert_agent_event(run_id, "stripe", "payment_complete", {"stripe_session_id": session_data.get("id")})
+            insert_agent_event(run_id, "stripe", "payment_complete", {
+                "stripe_session_id": stripe_session_id,
+                "amount_usd": amount_usd,
+                "source": deductible_source,
+            })
             update_run_status(run_id, "paid")
+
+            # Credit the user's deductible if this run is tied to a profile.
+            nullifier = get_run_nullifier(run_id)
+            if nullifier and nullifier != "dev-bypass" and amount_usd > 0:
+                ded = record_deductible_payment(
+                    nullifier_hash=nullifier,
+                    amount_usd=amount_usd,
+                    source=deductible_source,
+                    run_id=run_id,
+                    stripe_session_id=stripe_session_id,
+                )
+                logger.info(f"[stripe] deductible credit ${amount_usd:.2f} for run {run_id[:8]} ({deductible_source}): {ded}")
             logger.info(f"[stripe] payment complete for run {run_id[:8]}")
 
     return {"received": True}
+
+
+# ---------------------------------------------------------------------------
+# Profile (anonymous, keyed by World ID nullifier hash)
+# ---------------------------------------------------------------------------
+
+@app.get("/profile/{nullifier_hash}")
+async def get_user_profile(nullifier_hash: str):
+    profile = get_profile(nullifier_hash)
+    history = get_deductible_history(nullifier_hash) if profile else []
+    return {
+        "nullifier_hash": nullifier_hash,
+        "profile": profile,
+        "deductible_history": history,
+    }
+
+
+@app.put("/profile/{nullifier_hash}")
+async def update_user_profile(nullifier_hash: str, request: Request):
+    body = await request.json()
+    # Accept both flat fields and nested {profile: {...}} for client convenience.
+    fields = body.get("profile", body) or {}
+    if not isinstance(fields, dict):
+        raise HTTPException(status_code=400, detail="profile body must be an object")
+    profile = upsert_profile(nullifier_hash, fields)
+    return {"nullifier_hash": nullifier_hash, "profile": profile}
 
 
 # ---------------------------------------------------------------------------

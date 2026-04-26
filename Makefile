@@ -22,28 +22,30 @@ run:
 		attach
 
 # ─── Individual services ───────────────────────────────────────────────────────
+# All targets source env from web/.env.local (single source of truth, shared
+# with the Next.js app); repo-root .env stays as a fallback. set -a / set +a
+# is safer than `xargs` for values containing spaces or special characters.
 run-api:
-	@echo "→ Starting CareFlow FastAPI on :8000"
+	@echo "→ Starting Prana FastAPI on :8000"
 	cd $(CURDIR) && \
-		export $$(grep -v '^#' .env | xargs) 2>/dev/null; \
-		python -m uvicorn api.main:app --host 0.0.0.0 --port 8000 --reload
+		set -a; [ -f .env ] && . ./.env; [ -f web/.env.local ] && . ./web/.env.local; set +a; \
+		python3 -m uvicorn api.main:app --host 0.0.0.0 --port 8000 --reload
 
 run-agents:
-	@echo "→ Starting CareFlow uAgent bureau on :8100"
+	@echo "→ Starting Prana uAgent bureau on :8100"
 	cd $(CURDIR) && \
-		export $$(grep -v '^#' .env | xargs) 2>/dev/null; \
-		python agents/run_all.py
+		set -a; [ -f .env ] && . ./.env; [ -f web/.env.local ] && . ./web/.env.local; set +a; \
+		python3 agents/run_all.py
 
 run-livekit:
 	@echo "→ Starting CareFlow LiveKit voice agent"
 	cd web/livekit && \
-		export $$(grep -v '^#' ../../.env | xargs) 2>/dev/null; \
+		set -a; [ -f ../../.env ] && . ../../.env; [ -f ../.env.local ] && . ../.env.local; set +a; \
 		npm run agent
 
 run-web:
 	@echo "→ Starting CareFlow Next.js on :3000"
 	cd web && \
-		export $$(grep -v '^#' ../.env | xargs) 2>/dev/null; \
 		npm run dev
 
 # ─── Health check ─────────────────────────────────────────────────────────────
@@ -55,15 +57,15 @@ health:
 probe:
 	@echo "→ Probing CareFlow agent via ASI:One Chat Protocol"
 	cd $(CURDIR) && \
-		export $$(grep -v '^#' .env | xargs) 2>/dev/null; \
-		python scripts/omegaclaw_probe.py --text "I have had a sore throat and low-grade fever for 3 days"
+		set -a; [ -f .env ] && . ./.env; [ -f web/.env.local ] && . ./web/.env.local; set +a; \
+		python3 scripts/omegaclaw_probe.py --text "I have had a sore throat and low-grade fever for 3 days"
 
 # ─── Register agents on Agentverse ───────────────────────────────────────────
 register:
 	@echo "→ Registering CareFlow agents on Agentverse"
 	cd $(CURDIR) && \
-		export $$(grep -v '^#' .env | xargs) 2>/dev/null; \
-		python scripts/register_agents.py
+		set -a; [ -f .env ] && . ./.env; [ -f web/.env.local ] && . ./web/.env.local; set +a; \
+		python3 scripts/register_agents.py
 
 # ─── Reset DB ─────────────────────────────────────────────────────────────────
 reset-db:

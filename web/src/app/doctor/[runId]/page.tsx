@@ -1,9 +1,10 @@
 "use client";
 
-import { useEffect, useState, useRef, useCallback } from "react";
+import { useEffect, useMemo, useState, useRef, useCallback } from "react";
 import { useParams, useRouter, useSearchParams } from "next/navigation";
 import { motion } from "motion/react";
 import LanguagePicker from "@/app/components/LanguagePicker";
+import { useTranslate } from "@/lib/translate";
 import {
   getRun, runRanker, getRanker, createDoctorCheckout,
   type RankerSelectionItem,
@@ -17,6 +18,16 @@ interface ProviderResult {
   listingUrl?: string | null;
   acceptsInsurance?: boolean | null;
 }
+
+// Mirrors DOCTOR_COSTS in agents/prana/agent.py — fallback visit fee when the
+// ranker hasn't picked an item yet so the Book button always quotes the right
+// price for the current urgency.
+const DOCTOR_VISIT_COST: Record<string, number> = {
+  emergency: 350,
+  urgent: 175,
+  routine: 150,
+  wellness: 120,
+};
 
 interface SessionInfo {
   agent: string;
@@ -92,6 +103,29 @@ function ResultsModal({
   const sitesWithResults = new Set(allProviders.map((g) => g.site));
   const completedSites = sessions.filter((s) => s.done).length;
 
+  const tArr = useTranslate([
+    "Provider Results",                                     // 0
+    "appointment",                                          // 1
+    "appointments",                                         // 2
+    "from",                                                 // 3
+    "of",                                                   // 4
+    "sites",                                                // 5
+    "agents finished",                                      // 6
+    "No providers parsed yet. The search agents may have hit a captcha or empty results — try again, or search directly on Healthgrades or Solv.", // 7
+    "Earliest:",                                            // 8
+    "Accepts insurance",                                    // 9
+    "View →",                                               // 10
+    "Close",                                                // 11
+    "Book ranker pick",                                     // 12
+    "Book first provider",                                  // 13
+  ]);
+  const m = {
+    title: tArr[0], one: tArr[1], many: tArr[2], from: tArr[3], of: tArr[4],
+    sites: tArr[5], finished: tArr[6], noProviders: tArr[7], earliest: tArr[8],
+    insurance: tArr[9], view: tArr[10], close: tArr[11],
+    bookRanker: tArr[12], bookFirst: tArr[13],
+  };
+
   return (
     <div
       onClick={onClose}
@@ -113,11 +147,11 @@ function ResultsModal({
         <div className="flex items-start justify-between mb-4">
           <div>
             <h2 className="font-serif text-[#1F3A2E] text-2xl font-medium m-0">
-              Provider Results
+              {m.title}
             </h2>
             <div className="text-xs text-[#6B7280] mt-1">
-              {allProviders.length} appointment{allProviders.length !== 1 ? "s" : ""} from {sitesWithResults.size} of {sessions.length} sites
-              {completedSites < sessions.length && ` · ${completedSites}/${sessions.length} agents finished`}
+              {allProviders.length} {allProviders.length !== 1 ? m.many : m.one} {m.from} {sitesWithResults.size} {m.of} {sessions.length} {m.sites}
+              {completedSites < sessions.length && ` · ${completedSites}/${sessions.length} ${m.finished}`}
             </div>
           </div>
           <button
@@ -132,8 +166,7 @@ function ResultsModal({
 
         {allProviders.length === 0 ? (
           <div className="bg-[#EFEAE0] border border-[#1F3A2E]/10 rounded-xl px-5 py-8 text-center text-sm text-[#6B7280]">
-            No providers parsed yet. The search agents may have hit a captcha or
-            empty results — try again, or search directly on ZocDoc, Healthgrades, or Solv.
+            {m.noProviders}
           </div>
         ) : (
           <div className="space-y-2.5">
@@ -154,10 +187,10 @@ function ResultsModal({
                       <div className="text-xs text-[#6B7280] mt-1">📍 {provider.address}</div>
                     )}
                     {provider.time && (
-                      <div className="text-xs text-[#16A34A] mt-1">🗓 Earliest: {provider.time}</div>
+                      <div className="text-xs text-[#16A34A] mt-1">🗓 {m.earliest} {provider.time}</div>
                     )}
                     {provider.acceptsInsurance === true && (
-                      <div className="text-[10px] text-[#155E75] mt-1">✓ Accepts insurance</div>
+                      <div className="text-[10px] text-[#155E75] mt-1">✓ {m.insurance}</div>
                     )}
                   </div>
                   <div className="flex flex-col items-end gap-1.5 flex-shrink-0">
@@ -174,7 +207,7 @@ function ResultsModal({
                         rel="noopener noreferrer"
                         className="text-xs underline text-[#1F3A2E]"
                       >
-                        View →
+                        {m.view}
                       </a>
                     )}
                   </div>
@@ -195,7 +228,7 @@ function ResultsModal({
               minHeight: 44,
             }}
           >
-            Close
+            {m.close}
           </button>
           {allProviders.length > 0 && (
             <button
@@ -208,7 +241,7 @@ function ResultsModal({
                 minHeight: 44,
               }}
             >
-              {hasRanker ? "Book ranker pick" : "Book first provider"}
+              {hasRanker ? m.bookRanker : m.bookFirst}
             </button>
           )}
         </div>
@@ -218,9 +251,8 @@ function ResultsModal({
 }
 
 const FIXTURE_SESSIONS: SessionInfo[] = [
-  { agent: "ZocDoc", sessionId: "mock-1", liveUrl: "", status: "running" },
-  { agent: "Healthgrades", sessionId: "mock-2", liveUrl: "", status: "running" },
-  { agent: "Solv", sessionId: "mock-3", liveUrl: "", status: "running" },
+  { agent: "Healthgrades", sessionId: "mock_healthgrades_fixture", liveUrl: "", status: "completed", done: true, mock: true },
+  { agent: "Solv", sessionId: "mock_solv_fixture", liveUrl: "", status: "completed", done: true, mock: true },
 ];
 
 export default function DoctorPage() {
@@ -312,7 +344,10 @@ export default function DoctorPage() {
   useEffect(() => { sessionsRef.current = sessions; }, [sessions]);
   useEffect(() => {
     const stop = () => {
-      const ids = sessionsRef.current.map((s) => s.sessionId).filter(Boolean);
+      // Skip mock fixtures — BrowserUse SDK throws on unknown IDs.
+      const ids = sessionsRef.current
+        .map((s) => s.sessionId)
+        .filter((id) => id && !id.startsWith("mock_") && !id.startsWith("mock-"));
       if (!ids.length) return;
       const body = JSON.stringify({ sessionIds: ids });
       if (typeof navigator !== "undefined" && navigator.sendBeacon) {
@@ -331,9 +366,6 @@ export default function DoctorPage() {
 
   const statusDot = (s: SessionInfo) =>
     s.done ? "#16A34A" : s.status === "error" ? "#DC2626" : "#D97706";
-
-  const statusLabel = (s: SessionInfo) =>
-    s.done ? "Complete" : s.status === "error" ? "Failed" : "Searching…";
 
   // Fire ranker once all 3 doctor agents finish parsing
   useEffect(() => {
@@ -478,7 +510,7 @@ export default function DoctorPage() {
       ? [{
           id: undefined,
           name: fallbackProvider.provider.provider,
-          price: 150,
+          price: DOCTOR_VISIT_COST[urgency] ?? DOCTOR_VISIT_COST.routine,
           source_agent: fallbackProvider.site,
           description: fallbackProvider.provider.specialty
             ?? fallbackProvider.provider.address
@@ -502,6 +534,66 @@ export default function DoctorPage() {
 
   const totalProvidersFound = sessions.reduce((n, s) => n + parseProviders(s.output).length, 0);
 
+  // i18n — translate static UI strings + the dynamic intake summary.
+  const STATIC_KEYS = useMemo(() => [
+    "← Dashboard",                                                                    // 0
+    "Doctor Appointment Search",                                                      // 1
+    "For wellness care navigation only. Always verify provider credentials. In emergencies, call 911.", // 2
+    "Search for Providers",                                                           // 3
+    "Specialty / Concern",                                                            // 4
+    "Location",                                                                       // 5
+    "Launch Search Agents (×3)",                                                      // 6
+    "Launching agents…",                                                              // 7
+    "agents complete · Searching for",                                                // 8
+    "in",                                                                             // 9
+    "Searching…",                                                                     // 10
+    "Complete",                                                                       // 11
+    "Failed",                                                                         // 12
+    "Demo Mode",                                                                      // 13
+    "BrowserUse free-tier task quota reached. Showing fixture results so the demo continues.", // 14
+    "Waiting for live session…",                                                      // 15
+    "Provider results",                                                               // 16
+    "Ready to book your appointment",                                                 // 17
+    "Redirecting to Stripe…",                                                         // 18
+    "Booking cancelled. You can re-attempt the booking below.",                       // 19
+    "✓ Appointment Booked",                                                           // 20
+    "📅 Added to your Google Calendar",                                                // 21
+    "View event →",                                                                   // 22
+    "📅 Connect Google Calendar to auto-log future bookings.",                         // 23
+    "Connect →",                                                                      // 24
+    "🤖 Ranker Agent",                                                                 // 25
+    "Ranking providers…",                                                             // 26
+    "Appointments found",                                                             // 27
+    "Waiting for selection…",                                                         // 28
+    "Booking",                                                                        // 29
+    "No appointment selected.",                                                       // 30
+    "Booking total",                                                                  // 31
+    "Earliest:",                                                                      // 32
+    "Accepts insurance",                                                              // 33
+    "View listing →",                                                                 // 34
+    "View →",                                                                         // 35
+    "Provider Results",                                                               // 36
+    "Close",                                                                          // 37
+    "Book ranker pick",                                                               // 38
+    "Book first provider",                                                            // 39
+    "No providers parsed yet. The search agents may have hit a captcha or empty results — try again, or search directly on Healthgrades or Solv.", // 40
+  ], []);
+  const t = useTranslate(STATIC_KEYS);
+  const T = {
+    backDashboard: t[0], pageTitle: t[1], disclaimer: t[2], searchHeader: t[3],
+    specialtyLabel: t[4], locationLabel: t[5], launchBtn: t[6], launching: t[7],
+    completeFor: t[8], inWord: t[9], searching: t[10], statusComplete: t[11],
+    statusFailed: t[12], demoMode: t[13], demoBlurb: t[14], waitingLive: t[15],
+    providerResults: t[16], readyBook: t[17], redirecting: t[18], bookingCancelled: t[19],
+    booked: t[20], calLogged: t[21], viewEvent: t[22], calConnect: t[23], connectCal: t[24],
+    rankerHeader: t[25], rankingProviders: t[26], appointmentsFound: t[27],
+    waitingSelection: t[28], booking: t[29], noAppointment: t[30], bookingTotal: t[31],
+    earliest: t[32], acceptsInsurance: t[33], viewListing: t[34], viewShort: t[35],
+    modalTitle: t[36], close: t[37], bookRanker: t[38], bookFirst: t[39],
+    noProviders: t[40],
+  };
+  const tIntake = useTranslate([intakeSummary])[0];
+
   return (
     <div className="min-h-screen bg-[#F4F1EA]">
       {showResults && (
@@ -519,10 +611,10 @@ export default function DoctorPage() {
             onClick={() => router.push(`/dashboard?run_id=${runId}`)}
             className="text-[#1F3A2E] text-sm font-medium hover:opacity-70 transition-opacity min-h-[44px] flex items-center"
           >
-            ← Dashboard
+            {T.backDashboard}
           </button>
           <h1 className="font-serif text-[#1F3A2E] text-xl sm:text-2xl font-medium">
-            Doctor Appointment Search
+            {T.pageTitle}
           </h1>
           {started && totalProvidersFound > 0 && (
             <button
@@ -545,7 +637,7 @@ export default function DoctorPage() {
 
         {/* Disclaimer */}
         <div className="bg-[#EFEAE0] border border-[#1F3A2E]/10 rounded-2xl px-5 py-3 mb-6 text-sm text-[#6B7280]">
-          For wellness care navigation only. Always verify provider credentials. In emergencies, call 911.
+          {T.disclaimer}
         </div>
 
         {!started ? (
@@ -555,12 +647,12 @@ export default function DoctorPage() {
             className="bg-[#EFEAE0] rounded-2xl p-6 max-w-md"
           >
             <h2 className="font-serif text-[#1F3A2E] text-xl font-medium mb-6">
-              Search for Providers
+              {T.searchHeader}
             </h2>
 
             <div className="space-y-4 mb-6">
               <div>
-                <label className="block text-sm text-[#6B7280] mb-2">Specialty / Concern</label>
+                <label className="block text-sm text-[#6B7280] mb-2">{T.specialtyLabel}</label>
                 <input
                   value={specialty}
                   onChange={(e) => setSpecialty(e.target.value)}
@@ -569,7 +661,7 @@ export default function DoctorPage() {
                 />
               </div>
               <div>
-                <label className="block text-sm text-[#6B7280] mb-2">Location</label>
+                <label className="block text-sm text-[#6B7280] mb-2">{T.locationLabel}</label>
                 <input
                   value={location}
                   onChange={(e) => setLocation(e.target.value)}
@@ -586,14 +678,14 @@ export default function DoctorPage() {
               whileTap={{ scale: 0.99 }}
               className="w-full bg-[#1F3A2E] text-white rounded-full font-medium text-sm hover:bg-[#2A4D3D] transition-colors disabled:opacity-40 min-h-[52px]"
             >
-              {loading ? "Launching agents…" : "Launch Search Agents (×3)"}
+              {loading ? T.launching : T.launchBtn}
             </motion.button>
           </motion.div>
         ) : (
           <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }}>
             <p className="text-[#6B7280] text-sm mb-4">
-              {sessions.filter((s) => s.done).length}/{sessions.length} agents complete
-              · Searching for <strong className="text-[#3D3D3D]">{specialty}</strong> in{" "}
+              {sessions.filter((s) => s.done).length}/{sessions.length} {T.completeFor}{" "}
+              <strong className="text-[#3D3D3D]">{specialty}</strong> {T.inWord}{" "}
               <strong className="text-[#3D3D3D]">{location}</strong>
             </p>
             <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-4">
@@ -608,16 +700,18 @@ export default function DoctorPage() {
                       style={{ backgroundColor: statusDot(s), boxShadow: `0 0 6px ${statusDot(s)}` }}
                     />
                     <span className="font-medium text-[#1F3A2E] text-sm">{s.agent}</span>
-                    <span className="ml-auto text-xs text-[#6B7280]">{statusLabel(s)}</span>
+                    <span className="ml-auto text-xs text-[#6B7280]">
+                      {s.done ? T.statusComplete : s.status === "error" ? T.statusFailed : T.searching}
+                    </span>
                   </div>
                   {s.mock ? (
                     <div className="h-[340px] flex flex-col items-center justify-center text-center px-4 bg-[#F4F1EA]">
                       <span className="text-[10px] font-bold uppercase tracking-widest px-2.5 py-1 rounded-full bg-[#FEF3C7] text-[#D97706] mb-3">
-                        Demo Mode
+                        {T.demoMode}
                       </span>
                       <p className="text-[#1F3A2E] text-sm font-medium mb-1">{s.agent}</p>
                       <p className="text-[#6B7280] text-xs leading-relaxed max-w-[220px]">
-                        BrowserUse free-tier task quota reached. Showing fixture results so the demo continues.
+                        {T.demoBlurb}
                       </p>
                     </div>
                   ) : s.liveUrl ? (
@@ -629,7 +723,7 @@ export default function DoctorPage() {
                     />
                   ) : (
                     <div className="h-[340px] flex items-center justify-center text-[#6B7280] text-sm">
-                      {s.error ? `Error: ${s.error}` : "Waiting for live session…"}
+                      {s.error ? `Error: ${s.error}` : T.waitingLive}
                     </div>
                   )}
                   {s.done && parseProviders(s.output).length > 0 && (
