@@ -1,5 +1,11 @@
 import { NextResponse } from "next/server";
-import { AccessToken, type AccessTokenOptions, type VideoGrant } from "livekit-server-sdk";
+import {
+  AccessToken,
+  RoomConfiguration,
+  RoomAgentDispatch,
+  type AccessTokenOptions,
+  type VideoGrant,
+} from "livekit-server-sdk";
 
 const API_KEY = process.env.LIVEKIT_API_KEY;
 const API_SECRET = process.env.LIVEKIT_API_SECRET;
@@ -38,6 +44,19 @@ export async function POST(req: Request) {
     // Always embed lang in metadata so the agent can read it reliably
     const existingMeta = body.metadata ? (typeof body.metadata === "string" ? JSON.parse(body.metadata) : body.metadata) : {};
     at.metadata = JSON.stringify({ ...existingMeta, lang });
+
+    // Explicit agent dispatch — bypasses any project-level dispatch rules
+    // that filter by room-name prefix. agentName="" matches any registered
+    // agent worker, so all our personas (intake / altmed / mental) are
+    // dispatched regardless of room name.
+    at.roomConfig = new RoomConfiguration({
+      agents: [
+        new RoomAgentDispatch({
+          agentName: "",
+          metadata: JSON.stringify({ lang }),
+        }),
+      ],
+    });
 
     const participantToken = await at.toJwt();
 
