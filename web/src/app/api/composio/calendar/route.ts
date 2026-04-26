@@ -81,7 +81,15 @@ export async function POST(req: NextRequest) {
     });
 
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const data = (result as any)?.data ?? {};
+    const r = result as any;
+    if (r?.successful === false || r?.error) {
+      return NextResponse.json({
+        logged: false,
+        error: r.error ?? r.message ?? "Composio reported failure",
+        composio: r,
+      }, { status: 500 });
+    }
+    const data = r?.data ?? {};
     return NextResponse.json({
       logged: true,
       eventId: data.id ?? data.event_id ?? null,

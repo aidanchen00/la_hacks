@@ -12,7 +12,6 @@ function getComposio(): any {
 export async function POST(req: NextRequest) {
   const row = (await req.json()) as Record<string, string>;
   const entityId = entityFor("sheets");
-  // Prefer the new PRANA_SHEETS_ID; fall back to the legacy DOMUS_SHEETS_ID.
   const sheetsId = process.env.PRANA_SHEETS_ID ?? process.env.DOMUS_SHEETS_ID ?? "";
 
   if (!sheetsId) return NextResponse.json({ saved: false, error: "PRANA_SHEETS_ID (or legacy DOMUS_SHEETS_ID) not set" });
@@ -25,18 +24,40 @@ export async function POST(req: NextRequest) {
 
   try {
     const composio = getComposio();
-    await composio.tools.execute("GOOGLESHEETS_BATCH_UPDATE", {
+    // Append a new row at the bottom of the sheet rather than overwriting A1:J1.
+    // GOOGLESHEETS_VALUES_APPEND wraps Google's spreadsheets.values.append which
+    // auto-finds the next blank row in the table starting at the given range.
+    const result = await composio.tools.execute("GOOGLESHEETS_SPREADSHEETS_VALUES_APPEND", {
       userId: entityId,
       arguments: {
         spreadsheet_id: sheetsId,
-        ranges: ["Sheet1!A:J"],
+        range: "Sheet1!A:J",
         value_input_option: "USER_ENTERED",
-        data: [{ range: "Sheet1!A:J", values: [values] }],
+        insert_data_option: "INSERT_ROWS",
+        values: [values],
       },
       dangerouslySkipVersionCheck: true,
     });
-    return NextResponse.json({ saved: true });
+
+    // Surface Composio's actual response so silent failures aren't hidden.
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const r = result as any;
+    if (r?.successful === false || r?.error) {
+      return NextResponse.json({
+        saved: false,
+        error: r.error ?? r.message ?? "Composio reported failure",
+        composio: r,
+      }, { status: 500 });
+    }
+
+    return NextResponse.json({
+      saved: true,
+      updates: r?.data?.updates ?? null,
+    });
   } catch (err) {
-    return NextResponse.json({ saved: false, error: err instanceof Error ? err.message : String(err) });
+    return NextResponse.json({
+      saved: false,
+      error: err instanceof Error ? err.message : String(err),
+    }, { status: 500 });
   }
 }
