@@ -35,6 +35,7 @@ from uagents_core.contrib.protocols.payment import (  # type: ignore
 )
 
 from agents.shared.messages import BudgetAllocation, ShoppingResult
+from agents.shared.playwright_browser import extract_with_playwright
 
 logger = logging.getLogger("shopping-agent")
 
@@ -148,67 +149,140 @@ def make_seller_agent(
 
 
 # ---------------------------------------------------------------------------
-# BrowserUse search helper
+# Local Playwright scraping (replaces BrowserUse SaaS)
 # ---------------------------------------------------------------------------
+# Per-platform extractors. Each returns a dict matching the ShoppingResult
+# JSON contract: {name, price, url, description, in_stock}. On any failure
+# the extractor returns None (or the surrounding _scrape_or_mock falls back).
+
+from urllib.parse import quote_plus
+
+
+def _mock_for_platform(platform: str, query: str, budget: float) -> Dict[str, Any]:
+    """Realistic-looking fixture used when live scraping fails. Keeps the
+    demo from blanking on bot walls / captchas."""
+    p = platform.lower()
+    if p == "cvs":
+        return {"name": f"CVS Health {query.title()} (mock)", "price": min(8.99, budget),
+                "url": f"https://www.cvs.com/search?searchTerm={quote_plus(query)}",
+                "description": "OTC · 30 ct", "in_stock": True}
+    if p == "walgreens":
+        return {"name": f"Walgreens {query.title()} Caplets (mock)", "price": min(11.49, budget),
+                "url": f"https://www.walgreens.com/search/results.jsp?Ntt={quote_plus(query)}",
+                "description": "OTC · 24 ct", "in_stock": True}
+    if p == "goodrx":
+        return {"name": f"Generic {query.title()} (mock)", "price": min(4.50, budget),
+                "url": f"https://www.goodrx.com/search?query={quote_plus(query)}",
+                "description": "Coupon price · ~$15 retail", "in_stock": True}
+    if p == "amazon":
+        return {"name": f"{query.title()} Pack of 2 (mock)", "price": min(13.99, budget),
+                "url": f"https://www.amazon.com/s?k={quote_plus(query)}",
+                "description": "Prime eligible · 60 ct total", "in_stock": True}
+    return {"name": f"{platform} pick (mock)", "price": min(9.99, budget),
+            "url": "", "description": "fallback", "in_stock": True}
+
+
+async def _extract_goodrx(page) -> Optional[Dict[str, Any]]:
+    """GoodRx: clean HTML, no login. Look for first drug card + its price."""
+    await page.wait_for_selector("a[data-qa='med-link'], a[href*='/'], h2", timeout=12_000)
+    name_el = await page.query_selector("a[data-qa='med-link'], h1, h2")
+    name = (await name_el.inner_text()).strip() if name_el else None
+    price_el = await page.query_selector("[data-qa='price'], span:has-text('$')")
+    price_text = (await price_el.inner_text()).strip() if price_el else "0"
+    url = page.url
+    if not name:
+        return None
+    return {"name": name[:120], "price": price_text, "url": url, "description": "GoodRx coupon", "in_stock": True}
+
+
+async def _extract_cvs(page) -> Optional[Dict[str, Any]]:
+    """CVS often hits Akamai bot walls — best-effort first product card."""
+    await page.wait_for_selector("[data-test='product-name'], .product-name, h2", timeout=12_000)
+    name_el = await page.query_selector("[data-test='product-name'], .product-name, h2 a")
+    name = (await name_el.inner_text()).strip() if name_el else None
+    price_el = await page.query_selector("[data-test='price'], .price, span:has-text('$')")
+    price_text = (await price_el.inner_text()).strip() if price_el else "0"
+    if not name:
+        return None
+    return {"name": name[:120], "price": price_text, "url": page.url, "description": "CVS OTC", "in_stock": True}
+
+
+async def _extract_walgreens(page) -> Optional[Dict[str, Any]]:
+    """Walgreens: similar pattern to CVS, sometimes hits Challenge Validation."""
+    await page.wait_for_selector(".product__title, h3 a, [data-tile-style] a", timeout=12_000)
+    name_el = await page.query_selector(".product__title, h3 a, [data-tile-style] a")
+    name = (await name_el.inner_text()).strip() if name_el else None
+    price_el = await page.query_selector(".product__price, .price, span:has-text('$')")
+    price_text = (await price_el.inner_text()).strip() if price_el else "0"
+    if not name:
+        return None
+    return {"name": name[:120], "price": price_text, "url": page.url, "description": "Walgreens OTC", "in_stock": True}
+
+
+_PLATFORM_HANDLERS = {
+    "goodrx":    (lambda q: f"https://www.goodrx.com/search?query={quote_plus(q)}",  _extract_goodrx),
+    "cvs":       (lambda q: f"https://www.cvs.com/search?searchTerm={quote_plus(q)}", _extract_cvs),
+    "walgreens": (lambda q: f"https://www.walgreens.com/search/results.jsp?Ntt={quote_plus(q)}", _extract_walgreens),
+    # Amazon: too aggressive on bots from headless chromium without proxies.
+    # Always falls through to mock — keeping the agent in the lineup so
+    # ranker still gets a 4-source spread.
+}
+
 
 async def _browser_search(
     agent_name: str,
     platform: str,
-    task_template: str,
+    task_template: str,  # kept for backward-compat with callers; ignored by Playwright path
     run_id: str,
     query: str,
     budget: float,
     agent_logger: logging.Logger,
 ) -> ShoppingResult:
-    task = task_template.format(query=query, budget=budget)
+    handler = _PLATFORM_HANDLERS.get(platform.lower())
+    parsed: Optional[Dict[str, Any]] = None
 
-    # Start BrowserUse session
-    session_id: Optional[str] = None
-    try:
-        async with httpx.AsyncClient(timeout=15.0) as client:
-            resp = await client.post(f"{FASTAPI_BASE}/budget/browser/start", json={
-                "run_id": run_id,
-                "agent_name": agent_name,
-                "task": task,
-            })
-            data = resp.json()
-            session_id = data.get("session_id")
-    except Exception as e:
-        agent_logger.error(f"[{agent_name}] BrowserUse start failed: {e}")
-        return _error_result(run_id, agent_name, platform, budget, str(e))
-
-    if not session_id:
-        return _error_result(run_id, agent_name, platform, budget, "No session_id returned")
-
-    agent_logger.info(f"[{agent_name}] BrowserUse session started: {session_id}")
-
-    # Poll for result
-    elapsed = 0
-    while elapsed < BROWSER_TIMEOUT:
-        await asyncio.sleep(BROWSER_POLL_INTERVAL)
-        elapsed += BROWSER_POLL_INTERVAL
-
+    if handler:
+        url_builder, extractor = handler
+        url = url_builder(query)
         try:
-            async with httpx.AsyncClient(timeout=10.0) as client:
-                resp = await client.get(
-                    f"{FASTAPI_BASE}/budget/browser/status",
-                    params={"session_id": session_id, "run_id": run_id, "agent_name": agent_name},
-                )
-                data = resp.json()
+            parsed = await extract_with_playwright(url, extractor, timeout=25)
         except Exception as e:
-            agent_logger.warning(f"[{agent_name}] Poll error (retrying): {e}")
-            continue
+            agent_logger.warning(f"[{agent_name}] playwright extractor crashed: {e}")
+            parsed = None
 
-        status = data.get("status", "")
-        agent_logger.info(f"[{agent_name}] Browser status: {status} ({elapsed}s)")
+    if parsed and parsed.get("name"):
+        agent_logger.info(f"[{agent_name}] live (Playwright): {parsed.get('name')[:60]}")
+        return _build_result_from_dict(run_id, agent_name, platform, budget, parsed)
 
-        if status == "completed":
-            return _parse_result(run_id, agent_name, platform, budget, data.get("output", ""))
-        elif status in ("failed", "stopped", "error"):
-            return _error_result(run_id, agent_name, platform, budget,
-                                  data.get("error", f"Browser session {status}"))
+    mock = _mock_for_platform(platform, query, budget)
+    agent_logger.info(f"[{agent_name}] mock fallback: {mock['name']}")
+    return _build_result_from_dict(run_id, agent_name, platform, budget, mock)
 
-    return _error_result(run_id, agent_name, platform, budget, "BrowserUse timeout (120s)")
+
+def _build_result_from_dict(
+    run_id: str, agent_name: str, platform: str, budget: float, data: Dict[str, Any]
+) -> ShoppingResult:
+    raw_price = data.get("price")
+    if isinstance(raw_price, str):
+        try:
+            price = float(raw_price.replace("$", "").replace(",", "").split()[0])
+        except (ValueError, IndexError):
+            price = 0.0
+    else:
+        price = float(raw_price or 0)
+    spent = min(price, budget)
+    return ShoppingResult(
+        run_id=run_id,
+        agent_name=agent_name,
+        platform=platform,
+        item_name=data.get("name") or data.get("title"),
+        item_price=price,
+        item_url=data.get("url") or data.get("link"),
+        item_description=data.get("description"),
+        in_stock=bool(data.get("in_stock", True)),
+        wallet_spent=spent,
+        wallet_remaining=round(budget - spent, 2),
+    )
 
 
 def _parse_result(

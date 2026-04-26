@@ -4,3 +4,6 @@ openai>=1.75.0
 httpx>=0.28.0
 stripe>=12.0.0
 python-dotenv>=1.0.0
+# Local browser automation — replaces paid BrowserUse SaaS. After install,
+# run `playwright install chromium` once to download the browser binary.
+playwright>=1.48.0

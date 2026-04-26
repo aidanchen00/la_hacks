@@ -27,6 +27,9 @@ import httpx
 from uagents import Agent, Context
 
 from agents.shared.messages import AppointmentResult, AppointmentSearchRequest
+from agents.shared.playwright_browser import extract_with_playwright
+
+from urllib.parse import quote_plus
 
 logger = logging.getLogger("appointment-agent")
 
@@ -82,67 +85,129 @@ def _parse_providers(raw_output: Any) -> List[Dict[str, Any]]:
     return []
 
 
+# ---------------------------------------------------------------------------
+# Local Playwright scraping (replaces BrowserUse SaaS)
+# ---------------------------------------------------------------------------
+
+def _mock_providers(platform: str, query: str, location: str) -> List[Dict[str, Any]]:
+    """Realistic fixture providers used when scraping fails. Keeps the demo
+    from blanking on bot walls."""
+    p = platform.lower()
+    base_url = "https://www.healthgrades.com" if "healthgrade" in p else "https://www.solvhealth.com"
+    return [
+        {"provider": f"Dr. Sarah Chen, MD (mock)", "specialty": query.title(),
+         "time": "Tomorrow 10:00 AM", "address": f"{location}",
+         "listingUrl": base_url, "acceptsInsurance": True},
+        {"provider": f"Dr. Michael Rivera, DO (mock)", "specialty": query.title(),
+         "time": "Tomorrow 2:30 PM", "address": f"{location}",
+         "listingUrl": base_url, "acceptsInsurance": True},
+        {"provider": f"Dr. Priya Patel, MD (mock)", "specialty": query.title(),
+         "time": "Wed 9:15 AM", "address": f"{location}",
+         "listingUrl": base_url, "acceptsInsurance": False},
+    ]
+
+
+def _looks_like_provider(name: str) -> bool:
+    """Filter out page chrome that matches our generic selectors. A real
+    provider name is short-ish and doesn't contain meta phrases."""
+    if not name or len(name) > 120:
+        return False
+    lo = name.lower()
+    bad_signals = ("we found", "results for", "filter by", "sort by", "skip", "showing", "near you",
+                   "search", "view all", "see more", "loading")
+    return not any(b in lo for b in bad_signals)
+
+
+async def _extract_healthgrades(page) -> Optional[Dict[str, Any]]:
+    """Healthgrades search results: find provider cards. Best-effort selectors."""
+    await page.wait_for_selector("a[href*='/physician/'], h3 a, .card", timeout=12_000)
+    items = []
+    cards = await page.query_selector_all("article, [data-qa-target*='provider'], li.card")
+    for c in cards[:8]:
+        name_el = await c.query_selector("a[href*='/physician/'] h3, a[href*='/physician/'] h2, h3, h2")
+        if not name_el:
+            continue
+        name = (await name_el.inner_text()).strip()
+        if not _looks_like_provider(name):
+            continue
+        href_el = await c.query_selector("a[href*='/physician/']") or await c.query_selector("a[href]")
+        href = await href_el.get_attribute("href") if href_el else None
+        if href and href.startswith("/"):
+            href = "https://www.healthgrades.com" + href
+        items.append({"provider": name[:120], "specialty": None, "time": None,
+                       "address": None, "listingUrl": href, "acceptsInsurance": None})
+        if len(items) >= 5:
+            break
+    if not items:
+        return None
+    return {"appointments": items}
+
+
+async def _extract_solv(page) -> Optional[Dict[str, Any]]:
+    """Solv: urgent care booking. Try generic provider/clinic card selectors."""
+    await page.wait_for_selector("a[href*='/urgent-care'], h3, .clinic-card", timeout=12_000)
+    items = []
+    cards = await page.query_selector_all("a[href*='/urgent-care'], li, article")
+    for c in cards[:8]:
+        name_el = await c.query_selector("h3, h2, span")
+        if not name_el:
+            continue
+        name = (await name_el.inner_text()).strip()
+        if not _looks_like_provider(name):
+            continue
+        href = await c.get_attribute("href") if await c.evaluate("el => el.tagName") == "A" else None
+        if href and href.startswith("/"):
+            href = "https://www.solvhealth.com" + href
+        items.append({"provider": name[:120], "specialty": None, "time": "Walk-in",
+                       "address": None, "listingUrl": href, "acceptsInsurance": True})
+        if len(items) >= 5:
+            break
+    if not items:
+        return None
+    return {"appointments": items}
+
+
+_PLATFORM_HANDLERS = {
+    "healthgrades": (
+        lambda q, loc: f"https://www.healthgrades.com/usearch?what={quote_plus(q)}&where={quote_plus(loc)}",
+        _extract_healthgrades,
+    ),
+    "solv": (
+        lambda q, loc: f"https://www.solvhealth.com/search?location={quote_plus(loc)}&specialty={quote_plus(q)}",
+        _extract_solv,
+    ),
+}
+
+
 async def _browser_search(
     agent_name: str,
     platform: str,
-    base_url: str,
+    base_url: str,  # kept for backward-compat with callers
     run_id: str,
     query: str,
     location: str,
     agent_logger: logging.Logger,
 ) -> AppointmentResult:
-    task = _build_task(platform, base_url, query, location)
+    handler = _PLATFORM_HANDLERS.get(platform.lower())
+    parsed: Optional[Dict[str, Any]] = None
 
-    session_id: Optional[str] = None
-    try:
-        async with httpx.AsyncClient(timeout=20.0) as client:
-            resp = await client.post(f"{FASTAPI_BASE}/budget/browser/start", json={
-                "run_id": run_id,
-                "agent_name": agent_name,
-                "task": task,
-            })
-            session_id = resp.json().get("session_id")
-    except Exception as e:
-        agent_logger.error(f"[{agent_name}] BrowserUse start failed: {e}")
-        return AppointmentResult(run_id=run_id, agent_name=agent_name, platform=platform,
-                                  providers=[], error=str(e))
-
-    if not session_id:
-        return AppointmentResult(run_id=run_id, agent_name=agent_name, platform=platform,
-                                  providers=[], error="No session_id from BrowserUse")
-
-    agent_logger.info(f"[{agent_name}] BrowserUse session {session_id} started")
-
-    elapsed = 0
-    output: Any = None
-    while elapsed < BROWSER_TIMEOUT:
-        await asyncio.sleep(BROWSER_POLL_INTERVAL)
-        elapsed += BROWSER_POLL_INTERVAL
+    if handler:
+        url_builder, extractor = handler
+        url = url_builder(query, location)
         try:
-            async with httpx.AsyncClient(timeout=15.0) as client:
-                resp = await client.get(
-                    f"{FASTAPI_BASE}/budget/browser/status",
-                    params={"session_id": session_id, "run_id": run_id, "agent_name": agent_name},
-                )
-                data = resp.json()
+            parsed = await extract_with_playwright(url, extractor, timeout=25)
         except Exception as e:
-            agent_logger.warning(f"[{agent_name}] Poll error (retrying): {e}")
-            continue
+            agent_logger.warning(f"[{agent_name}] playwright extractor crashed: {e}")
+            parsed = None
 
-        status = data.get("status", "")
-        if status == "completed":
-            output = data.get("output", "")
-            break
-        if status in ("failed", "error", "stopped"):
-            return AppointmentResult(run_id=run_id, agent_name=agent_name, platform=platform,
-                                      providers=[], error=data.get("error", status))
+    providers: List[Dict[str, Any]]
+    if parsed and isinstance(parsed.get("appointments"), list) and parsed["appointments"]:
+        providers = parsed["appointments"]
+        agent_logger.info(f"[{agent_name}] live (Playwright): {len(providers)} provider(s)")
+    else:
+        providers = _mock_providers(platform, query, location)
+        agent_logger.info(f"[{agent_name}] mock fallback: {len(providers)} provider(s)")
 
-    if output is None:
-        return AppointmentResult(run_id=run_id, agent_name=agent_name, platform=platform,
-                                  providers=[], error="BrowserUse timeout")
-
-    providers = _parse_providers(output)
-    agent_logger.info(f"[{agent_name}] Parsed {len(providers)} provider(s)")
     return AppointmentResult(run_id=run_id, agent_name=agent_name, platform=platform,
                               providers=providers)
 
