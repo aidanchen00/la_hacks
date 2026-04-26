@@ -162,6 +162,7 @@ export default defineAgent({
     const roomName = ctx.room.name;
     const isAltMed  = roomName.startsWith("altmed-");
     const isMental  = roomName.startsWith("mental-");
+    console.info(`[Prana] entry() roomName="${roomName}" isAltMed=${isAltMed} isMental=${isMental}`);
 
     // Read language + intake context from participant metadata
     let sessionLang: "en" | "es" | "zh" = "en";
@@ -381,8 +382,14 @@ LANGUAGE: ${langDirective[sessionLang] ?? langDirective.en}`;
     });
 
     await session.start({ agent, room: ctx.room });
+    console.info(`[Prana] session started, firing greeting (chars=${greetingInstructions.length})`);
 
-    session.generateReply({ instructions: greetingInstructions });
+    try {
+      await session.generateReply({ instructions: greetingInstructions });
+      console.info(`[Prana] greeting reply queued`);
+    } catch (e) {
+      console.error(`[Prana] greeting generateReply failed:`, e);
+    }
   },
 });
 
