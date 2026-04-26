@@ -35,6 +35,10 @@ export interface RoutingDecision {
   requires_doctor_approval: boolean;
   rationale: string;
   disclaimers: string[];
+  // Per-session search context produced by the router LLM
+  specialty?: string | null;
+  location?: string | null;
+  search_query?: string | null;
 }
 
 export function postIntake(payload: IntakePayload): Promise<{ run_id: string }> {

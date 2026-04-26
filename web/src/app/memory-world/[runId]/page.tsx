@@ -5,6 +5,16 @@ import { useParams } from "next/navigation";
 import { useOdyssey } from "@odysseyml/odyssey/react";
 import { credentialsFromDict, Odyssey } from "@odysseyml/odyssey";
 import { motion } from "motion/react";
+import {
+  LiveKitRoom,
+  useVoiceAssistant,
+  BarVisualizer,
+  RoomAudioRenderer,
+  TrackToggle,
+  DisconnectButton,
+} from "@livekit/components-react";
+import { Track } from "livekit-client";
+import "@livekit/components-styles";
 import LanguagePicker from "@/app/components/LanguagePicker";
 import {
   SEED_MEMORIES,
@@ -16,6 +26,8 @@ import {
   resolveMemorySrc,
   type Memory,
 } from "@/lib/memories";
+import { getLang } from "@/lib/language";
+import { getRun } from "@/lib/api";
 
 // ---------------------------------------------------------------------------
 // LocalStorage tracking of recent Odyssey credentials so a fresh page-load
@@ -71,6 +83,177 @@ async function reapPriorOdysseyStreams(): Promise<number> {
   return killed;
 }
 
+// ---------------------------------------------------------------------------
+// Dr. Aria — psychiatrist voice agent (LiveKit room)
+// Same pattern as the alt-medicine call window but uses room name prefix
+// `mental-` so the agent worker spins up the psychiatrist persona with the
+// calmer Eleven Labs voice.
+// ---------------------------------------------------------------------------
+
+function TherapistCallContent() {
+  const { state, audioTrack } = useVoiceAssistant();
+  const stateColor =
+    state === "speaking" ? "#1F3A2E"
+    : state === "listening" ? "#16A34A"
+    : state === "thinking" ? "#D97706"
+    : "#6B7280";
+  return (
+    <div className="px-4 pt-4 pb-5 flex flex-col gap-3.5 items-center">
+      <BarVisualizer
+        state={state}
+        barCount={7}
+        trackRef={audioTrack}
+        className="w-full"
+        style={{ height: 52 }}
+      />
+      <div className="flex items-center gap-2 text-xs text-[#6B7280]">
+        <span
+          className="w-2 h-2 rounded-full inline-block"
+          style={{ background: stateColor, boxShadow: `0 0 6px ${stateColor}` }}
+        />
+        {state ?? "connecting…"}
+      </div>
+      <div className="flex gap-2" data-lk-theme="default">
+        <TrackToggle
+          source={Track.Source.Microphone}
+          className="px-4 py-2.5 rounded-full text-sm cursor-pointer border-none"
+          style={{ background: "rgba(31,58,46,0.06)", color: "#1F3A2E", minHeight: 44 }}
+        />
+        <DisconnectButton
+          className="px-4 py-2.5 rounded-full text-sm cursor-pointer border-none"
+          style={{ background: "#FEE2E2", color: "#DC2626", minHeight: 44 }}
+        >
+          End Call
+        </DisconnectButton>
+      </div>
+      <RoomAudioRenderer />
+    </div>
+  );
+}
+
+function TherapistCallWindow({
+  runId,
+  onClose,
+}: {
+  runId: string;
+  onClose: () => void;
+}) {
+  const [conn, setConn] = useState<{ serverUrl: string; token: string } | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const roomNameRef = useRef(`mental-${runId || "no-run"}-${Date.now()}`);
+
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      const lang = getLang();
+
+      let intake_context = "";
+      try {
+        if (runId && runId !== "no-run") {
+          const run = await getRun(runId).catch(() => null);
+          if (run) {
+            const rd = run.routing_decision;
+            const parts: string[] = [];
+            if (run.intake_summary) parts.push(`Intake summary: ${run.intake_summary}`);
+            if (rd?.summary) parts.push(`Routing summary: ${rd.summary}`);
+            if (rd?.urgency) parts.push(`Urgency: ${rd.urgency}`);
+            if (rd?.recommended_path) parts.push(`Suggested path: ${rd.recommended_path}`);
+            if (Array.isArray(rd?.next_actions) && rd.next_actions.length) parts.push(`Next actions: ${rd.next_actions.join("; ")}`);
+            intake_context = parts.join("\n");
+          }
+        }
+        if (!intake_context) {
+          const r = await fetch(`/api/runs`);
+          if (r.ok) {
+            const runs = await r.json();
+            const latest = Array.isArray(runs) && runs.length > 0 ? runs[0] : null;
+            if (latest) {
+              const parts = [];
+              if (latest.intake_summary) parts.push(`Intake summary: ${latest.intake_summary}`);
+              if (latest.rd_summary) parts.push(`Routing summary: ${latest.rd_summary}`);
+              if (latest.urgency) parts.push(`Urgency: ${latest.urgency}`);
+              if (latest.recommended_path) parts.push(`Suggested path: ${latest.recommended_path}`);
+              intake_context = parts.join("\n");
+            }
+          }
+        }
+      } catch { /* ignore */ }
+
+      try {
+        const res = await fetch(`/api/token?lang=${lang}`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            room_name: roomNameRef.current,
+            participant_name: "user",
+            metadata: { intake_context },
+          }),
+        });
+        const data = await res.json();
+        if (!cancelled) setConn({ serverUrl: data.serverUrl, token: data.participantToken });
+      } catch {
+        if (!cancelled) setError("Failed to connect to Dr. Aria");
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [runId]);
+
+  return (
+    <motion.div
+      initial={{ opacity: 0, y: 20 }}
+      animate={{ opacity: 1, y: 0 }}
+      style={{
+        position: "fixed",
+        bottom: 24,
+        right: 24,
+        width: 320,
+        zIndex: 1000,
+        borderRadius: 16,
+        background: "#F4F1EA",
+        border: "1px solid rgba(31,58,46,0.20)",
+        boxShadow: "0 8px 32px rgba(31,58,46,0.18), 0 4px 12px rgba(31,58,46,0.12)",
+        overflow: "hidden",
+      }}
+    >
+      <div
+        className="px-4 py-3.5 flex items-center gap-2.5"
+        style={{ borderBottom: "1px solid rgba(31,58,46,0.10)", background: "linear-gradient(135deg, rgba(31,58,46,0.06), transparent)" }}
+      >
+        <span style={{ fontSize: 22 }}>🌿</span>
+        <div className="flex-1 min-w-0">
+          <div className="font-medium text-sm text-[#1F3A2E] truncate">Dr. Aria</div>
+          <div className="text-xs mt-0.5 text-[#1F3A2E]/60">Psychiatrist · here to listen</div>
+        </div>
+        <button
+          onClick={onClose}
+          className="bg-transparent border-none cursor-pointer leading-none px-2 py-1 flex items-center justify-center flex-shrink-0"
+          style={{ color: "#6B7280", fontSize: 24, minHeight: 44, minWidth: 44 }}
+          aria-label="Close call"
+        >
+          ×
+        </button>
+      </div>
+
+      {error ? (
+        <div className="px-5 py-5 text-center text-xs text-[#DC2626]">{error}</div>
+      ) : !conn ? (
+        <div className="px-7 py-7 text-center text-xs text-[#6B7280]">Connecting to Dr. Aria…</div>
+      ) : (
+        <LiveKitRoom
+          serverUrl={conn.serverUrl}
+          token={conn.token}
+          connect={true}
+          audio={true}
+          video={false}
+          onDisconnected={onClose}
+        >
+          <TherapistCallContent />
+        </LiveKitRoom>
+      )}
+    </motion.div>
+  );
+}
+
 export default function MemoryWorldPage() {
   const { runId } = useParams<{ runId: string }>();
   const [prompt, setPrompt] = useState("");
@@ -81,6 +264,7 @@ export default function MemoryWorldPage() {
   const [loading, setLoading] = useState(false);
   const [userMemories, setUserMemories] = useState<Memory[]>([]);
   const [selectedMemoryId, setSelectedMemoryId] = useState<string | null>(null);
+  const [therapistOpen, setTherapistOpen] = useState(false);
   const videoRef = useRef<HTMLVideoElement>(null);
   const fileRef = useRef<HTMLInputElement>(null);
 
@@ -265,6 +449,20 @@ export default function MemoryWorldPage() {
             >
               {statusLabel()}
             </span>
+            <button
+              onClick={() => setTherapistOpen(true)}
+              disabled={therapistOpen}
+              className="flex items-center gap-1.5 px-3 py-2 rounded-full text-xs sm:text-sm font-medium transition-colors min-h-[36px] disabled:opacity-50 disabled:cursor-default"
+              style={{
+                background: "rgba(31,58,46,0.08)",
+                color: "#1F3A2E",
+                border: "1px solid rgba(31,58,46,0.20)",
+              }}
+              title="Talk to Dr. Aria — psychiatrist voice agent"
+            >
+              <span style={{ fontSize: 14 }}>🌿</span>
+              <span>Talk to Dr. Aria</span>
+            </button>
             <LanguagePicker />
           </div>
         </div>
@@ -426,6 +624,10 @@ export default function MemoryWorldPage() {
           </div>
         </div>
       </div>
+
+      {therapistOpen && (
+        <TherapistCallWindow runId={runId} onClose={() => setTherapistOpen(false)} />
+      )}
     </div>
   );
 }

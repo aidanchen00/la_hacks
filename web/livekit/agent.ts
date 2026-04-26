@@ -137,6 +137,9 @@ HARD RULE — END IMMEDIATELY (call finish_intake on your VERY NEXT turn, ZERO f
 - "end", "wrap up", "stop", "finish the session" → finish_intake NOW.
 If in doubt, finish. It is FAR better to wrap up early with partial info than to ask another question after a decision request. Once any trigger above appears, you MUST NOT speak another question — your next action is the finish_intake tool call.
 
+ABSOLUTE GOODBYE RULE — READ THIS TWICE:
+You MAY NOT say "take care", "feel better", "have a good day", "good luck", "stay well", "bye", "goodbye", or ANY closing phrase until AFTER you have called the finish_intake tool. Closing words without first calling the tool LEAVES THE USER STUCK ON A FROZEN SCREEN. The correct sequence is ALWAYS: (1) call finish_intake, (2) then the system delivers the closing message automatically. If you find yourself about to say goodbye, STOP and call finish_intake instead.
+
 CONVERSATION STYLE:
 - Warm, calm, professional. Never clinical or cold.
 - Short responses — this is voice, keep to 1-3 sentences per turn.
@@ -307,10 +310,51 @@ LANGUAGE: ${langDirective[sessionLang] ?? langDirective.en}`;
       minInterruptionDuration: 0.5,
     });
 
+    // Track whether finish_intake fired. Used as a safety net so that even if the
+    // LLM forgets the tool and just says "take care", we can publish the
+    // intake_complete event ourselves and unblock the front-end.
+    let intakeCompleted = isAltMed || isMental;  // alt-med + therapy never finalize intake
+
     session.on(voice.AgentSessionEventTypes.ConversationItemAdded, async (ev) => {
       const text = ev.item.textContent;
       if (!text || text.trim().length < 1) return;
       console.info(`[Prana] ${ev.item.role}: ${text.slice(0, 120)}`);
+
+      // If the assistant speaks the finish_intake tool's return string, the
+      // tool definitely fired and the front-end already got intake_complete.
+      // Mark it so the goodbye-fallback below stays quiet.
+      if (
+        !intakeCompleted &&
+        ev.item.role === "assistant" &&
+        /\bIntake complete\b.*\b(redirecting|dashboard)\b/i.test(text)
+      ) {
+        intakeCompleted = true;
+      }
+
+      // Safety net for the intake flow: detect a goodbye phrase from the
+      // assistant when finish_intake was never invoked, and publish the
+      // intake_complete event ourselves so the front-end can navigate.
+      if (
+        !intakeCompleted &&
+        ev.item.role === "assistant" &&
+        /\b(take care|feel better|have a (great|good) (day|one)|good ?bye|bye(\s|\.|!|$)|stay well|wishing you well|wrap(ping)? up)/i.test(text)
+      ) {
+        intakeCompleted = true;
+        const fallbackPayload = JSON.stringify({
+          type: "intake_complete",
+          summary: "Intake completed via voice session.",
+          symptoms: [],
+          suggested_path: "self_care",
+          urgency: "wellness",
+          fallback: true,
+        });
+        try {
+          await ctx.agent?.publishData(new TextEncoder().encode(fallbackPayload), { reliable: true });
+          console.warn("[Prana] finish_intake never called — published fallback intake_complete after assistant goodbye");
+        } catch (e) {
+          console.error("[Prana] fallback intake_complete publish failed:", e);
+        }
+      }
     });
 
     session.on(voice.AgentSessionEventTypes.AgentStateChanged, (ev) => {

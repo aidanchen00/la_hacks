@@ -160,6 +160,7 @@ interface IntakeData {
 function RoomView({ onIntakeComplete, t }: { onIntakeComplete: (data: IntakeData) => void; t: Translations }) {
   const agent = useAgent();
   const intakeRef = useRef<IntakeData>({});
+  const completedRef = useRef(false);
   const [liveTranscript, setLiveTranscript] = useState("");
 
   const onData = useCallback((msg: { payload: Uint8Array }) => {
@@ -173,6 +174,8 @@ function RoomView({ onIntakeComplete, t }: { onIntakeComplete: (data: IntakeData
       } else if (data.type === "urgency_set") {
         intakeRef.current.urgency = data.urgency;
       } else if (data.type === "intake_complete") {
+        if (completedRef.current) return; // belt-and-suspenders: ignore duplicates
+        completedRef.current = true;
         intakeRef.current = { ...intakeRef.current, ...data };
         onIntakeComplete(intakeRef.current);
       }

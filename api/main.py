@@ -27,7 +27,17 @@ from fastapi.responses import StreamingResponse
 from api.config import CORS_ORIGINS, STRIPE_SECRET_KEY
 
 BROWSER_USE_API_KEY = os.getenv("BROWSER_USE_API_KEY", "")
-BROWSER_USE_BASE    = "https://api.browser.use.com/v1"
+BROWSER_USE_BASE    = "https://api.browser-use.com/api/v3"
+# v3 BuModel enum: bu-mini | bu-max | bu-ultra | gemini-3-flash |
+# claude-sonnet-4.6 | claude-opus-4.6 | gpt-5.4-mini.
+# gpt-5.4-mini routes to the user's BYOK OpenAI key on BrowserUse so LLM cost
+# bills against OpenAI directly instead of consuming task credits.
+BROWSER_USE_MODEL   = os.getenv("BROWSER_USE_MODEL", "gpt-5.4-mini")
+
+# v3 lifecycle: created → idle → running → (stopped | timed_out | error).
+# `idle` after a task ran means the task completed and the session is parked,
+# so output-presence is the actual completion signal — not the status alone.
+_BU_TERMINAL_STATUSES = {"stopped", "timed_out", "error"}
 
 # active BrowserUse sessions for the budget pipeline: agent_name → session_id
 _budget_browser_sessions: Dict[str, str] = {}
@@ -73,19 +83,6 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
-
-# Local browser backend (Steel Browser + browser-use). Optional — only mounted if
-# the dependencies are installed. Activate from the frontend with
-# BROWSER_BACKEND=steel.
-try:
-    from api.browser_local import router as browser_local_router
-    app.include_router(browser_local_router)
-    logger.info("[browser-local] Steel + browser-use backend mounted at /browser-local")
-except Exception as e:
-    logging.getLogger(__name__).warning(
-        f"[browser-local] not mounted ({e}). pip install browser-use langchain-openai to enable."
-    )
-
 
 # ---------------------------------------------------------------------------
 # Health
@@ -329,9 +326,28 @@ async def budget_checkout(request: Request):
 # Budget BrowserUse session management
 # ---------------------------------------------------------------------------
 
+def _bu_output_to_str(output: Any) -> str:
+    """v3 `output` is `unknown | null` — string when no outputSchema, otherwise
+    a structured object. Shopping agents expect a string they can json.loads()."""
+    if output is None:
+        return ""
+    if isinstance(output, str):
+        return output
+    try:
+        return json.dumps(output)
+    except Exception:
+        return str(output)
+
+
 @app.post("/budget/browser/start")
 async def budget_browser_start(request: Request):
-    """Start one BrowserUse session for a seller agent."""
+    """Start one BrowserUse v3 session and dispatch the seller-agent task.
+
+    v3 contract:
+      POST /sessions {task} → SessionResponse {id, status, liveUrl, ...}
+    A new session is created and the task starts immediately when `task` is set
+    and `sessionId` is omitted.
+    """
     if not BROWSER_USE_API_KEY:
         raise HTTPException(status_code=500, detail="BROWSER_USE_API_KEY not configured")
     body = await request.json()
@@ -341,57 +357,83 @@ async def budget_browser_start(request: Request):
 
     async with httpx.AsyncClient(timeout=20.0) as client:
         resp = await client.post(
-            f"{BROWSER_USE_BASE}/run-task",
-            headers={"Authorization": f"Bearer {BROWSER_USE_API_KEY}"},
-            json={"task": task, "save_browser_data": False},
+            f"{BROWSER_USE_BASE}/sessions",
+            headers={"X-Browser-Use-API-Key": BROWSER_USE_API_KEY},
+            json={"task": task, "model": BROWSER_USE_MODEL},
         )
         if resp.status_code not in (200, 201):
             raise HTTPException(status_code=resp.status_code,
                                  detail=f"BrowserUse error: {resp.text}")
         data = resp.json()
 
-    session_id = data.get("id") or data.get("task_id") or data.get("session_id")
+    session_id = data.get("id")
     if not session_id:
-        raise HTTPException(status_code=500, detail="No session_id from BrowserUse")
+        raise HTTPException(status_code=500, detail="No session id from BrowserUse v3")
 
     _budget_browser_sessions[agent_name] = session_id
-    insert_agent_event(run_id, agent_name, "browser_started", {"session_id": session_id})
+    insert_agent_event(run_id, agent_name, "browser_started", {
+        "session_id": session_id,
+        "live_url": data.get("liveUrl"),
+    })
     logger.info(f"[budget-browser] {agent_name} → session {session_id}")
-    return {"session_id": session_id, "agent_name": agent_name}
+    return {"session_id": session_id, "agent_name": agent_name, "live_url": data.get("liveUrl")}
 
 
 @app.get("/budget/browser/status")
 async def budget_browser_status(session_id: str, run_id: str = "", agent_name: str = ""):
-    """Poll one BrowserUse session for status and result."""
+    """Poll one BrowserUse v3 session.
+
+    v3 statuses: created | idle | running | stopped | timed_out | error.
+    `idle` after a task ran means the task completed and the session is parked,
+    so output-presence is the actual completion signal.
+
+    The shopping-agent caller (`agents/shopping/base.py`) expects this endpoint
+    to return one of: completed | failed | running. Map v3 → that surface.
+    """
     if not BROWSER_USE_API_KEY:
         raise HTTPException(status_code=500, detail="BROWSER_USE_API_KEY not configured")
 
     async with httpx.AsyncClient(timeout=15.0) as client:
         resp = await client.get(
-            f"{BROWSER_USE_BASE}/task/{session_id}",
-            headers={"Authorization": f"Bearer {BROWSER_USE_API_KEY}"},
+            f"{BROWSER_USE_BASE}/sessions/{session_id}",
+            headers={"X-Browser-Use-API-Key": BROWSER_USE_API_KEY},
         )
         if resp.status_code == 404:
             return {"status": "error", "error": "session not found"}
         data = resp.json()
 
-    status = data.get("status", "running")
-    output = data.get("output") or data.get("result") or ""
+    bu_status = data.get("status", "running")
+    output_str = _bu_output_to_str(data.get("output"))
+    is_terminal = bu_status in _BU_TERMINAL_STATUSES
+    has_output  = bool(output_str)
 
-    if status in ("finished", "done", "completed", "success"):
+    if has_output or (bu_status == "idle" and data.get("isTaskSuccessful") is not None):
         if run_id and agent_name:
-            insert_agent_event(run_id, agent_name, "browser_completed",
-                                {"session_id": session_id, "output_length": len(str(output))})
-        return {"status": "completed", "output": output}
-    elif status in ("failed", "error", "stopped", "cancelled"):
-        return {"status": "failed", "error": data.get("error", status), "output": output}
-    else:
-        return {"status": "running", "output": output}
+            insert_agent_event(run_id, agent_name, "browser_completed", {
+                "session_id": session_id,
+                "output_length": len(output_str),
+                "bu_status": bu_status,
+                "is_task_successful": data.get("isTaskSuccessful"),
+            })
+        return {"status": "completed", "output": output_str, "bu_status": bu_status}
+
+    if is_terminal:
+        return {
+            "status": "failed",
+            "error": f"BrowserUse session ended in {bu_status} with no output",
+            "output": output_str,
+            "bu_status": bu_status,
+        }
+
+    return {"status": "running", "output": output_str, "bu_status": bu_status}
 
 
 @app.post("/budget/browser/stop-all")
 async def budget_browser_stop_all():
-    """Stop all active budget BrowserUse sessions."""
+    """Stop all active budget BrowserUse sessions.
+
+    v3: POST /sessions/{id}/stop  (body optional — strategy defaults server-side).
+    """
     if not BROWSER_USE_API_KEY or not _budget_browser_sessions:
         _budget_browser_sessions.clear()
         return {"stopped": 0}
@@ -400,12 +442,17 @@ async def budget_browser_stop_all():
     async with httpx.AsyncClient(timeout=10.0) as client:
         for agent_name, session_id in list(_budget_browser_sessions.items()):
             try:
-                await client.delete(
-                    f"{BROWSER_USE_BASE}/task/{session_id}/stop",
-                    headers={"Authorization": f"Bearer {BROWSER_USE_API_KEY}"},
+                resp = await client.post(
+                    f"{BROWSER_USE_BASE}/sessions/{session_id}/stop",
+                    headers={"X-Browser-Use-API-Key": BROWSER_USE_API_KEY},
+                    json={"strategy": "session"},
                 )
-                stopped += 1
-                logger.info(f"[budget-browser] stopped session {session_id} ({agent_name})")
+                # Already-stopped sessions return 4xx — treat as no-op, not an error.
+                if resp.status_code < 500:
+                    stopped += 1
+                    logger.info(f"[budget-browser] stopped session {session_id} ({agent_name})")
+                else:
+                    logger.warning(f"[budget-browser] stop {session_id} → {resp.status_code}: {resp.text}")
             except Exception as e:
                 logger.warning(f"[budget-browser] stop {session_id} failed: {e}")
 

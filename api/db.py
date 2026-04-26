@@ -41,6 +41,9 @@ def init_db() -> None:
             requires_doctor_approval INTEGER NOT NULL DEFAULT 0,
             rationale TEXT,
             disclaimers TEXT NOT NULL DEFAULT '[]',
+            specialty TEXT,
+            location TEXT,
+            search_query TEXT,
             created_at TEXT NOT NULL DEFAULT (datetime('now'))
         );
 
@@ -105,6 +108,8 @@ def init_db() -> None:
 
         CREATE INDEX IF NOT EXISTS idx_wallets_run ON agent_wallets(run_id);
         CREATE INDEX IF NOT EXISTS idx_cart_run ON shopping_cart(run_id);
+        -- Backfill columns for older DBs that pre-date the specialty/location/search_query fields
+        -- (sqlite ignores ADD COLUMN if it already exists when wrapped via try/except, see _migrate below)
 
         CREATE TABLE IF NOT EXISTS ranker_selections (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -125,6 +130,16 @@ def init_db() -> None:
         );
         CREATE INDEX IF NOT EXISTS idx_ranker_run ON ranker_selections(run_id, domain);
     """)
+    # Idempotent migrations for older DBs (sqlite has no IF NOT EXISTS for ADD COLUMN)
+    for col_def in (
+        "specialty TEXT",
+        "location TEXT",
+        "search_query TEXT",
+    ):
+        try:
+            conn.execute(f"ALTER TABLE routing_decisions ADD COLUMN {col_def}")
+        except sqlite3.OperationalError:
+            pass  # column already present
     conn.commit()
     conn.close()
 
@@ -175,14 +190,16 @@ def upsert_routing_decision(d: Dict[str, Any]) -> None:
     conn.execute(
         """INSERT OR REPLACE INTO routing_decisions
            (run_id, urgency, recommended_path, summary, next_actions, payment_required,
-            payment_amount, requires_doctor_approval, rationale, disclaimers)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+            payment_amount, requires_doctor_approval, rationale, disclaimers,
+            specialty, location, search_query)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
         (
             d["run_id"], d.get("urgency", "wellness"), d.get("recommended_path", "self_care"),
             d.get("summary"), json.dumps(d.get("next_actions", [])),
             int(d.get("payment_required", False)), float(d.get("payment_amount_usd", 0)),
             int(d.get("requires_doctor_approval", False)), d.get("rationale"),
             json.dumps(d.get("disclaimers", [])),
+            d.get("specialty"), d.get("location"), d.get("query") or d.get("search_query"),
         ),
     )
     conn.execute(

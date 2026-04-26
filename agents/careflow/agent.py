@@ -243,6 +243,9 @@ def _ensure_schema() -> None:
             requires_doctor_approval INTEGER NOT NULL DEFAULT 0,
             rationale TEXT,
             disclaimers TEXT NOT NULL DEFAULT '[]',
+            specialty TEXT,
+            location TEXT,
+            search_query TEXT,
             created_at TEXT NOT NULL DEFAULT (datetime('now'))
         );
         CREATE TABLE IF NOT EXISTS agent_events (
@@ -292,6 +295,12 @@ def _ensure_schema() -> None:
         CREATE INDEX IF NOT EXISTS idx_runs_status ON runs(status);
         CREATE INDEX IF NOT EXISTS idx_events_run ON agent_events(run_id);
     """)
+    # Backfill columns for older DBs (sqlite has no IF NOT EXISTS for ADD COLUMN)
+    for col_def in ("specialty TEXT", "location TEXT", "search_query TEXT"):
+        try:
+            conn.execute(f"ALTER TABLE routing_decisions ADD COLUMN {col_def}")
+        except sqlite3.OperationalError:
+            pass
     conn.commit()
     conn.close()
     logger.info("[db] Schema ensured")
@@ -316,8 +325,9 @@ def _save_routing(run_id: str, decision: Dict[str, Any]) -> None:
     conn.execute(
         """INSERT OR REPLACE INTO routing_decisions
            (run_id, urgency, recommended_path, summary, next_actions, payment_required,
-            payment_amount, requires_doctor_approval, rationale, disclaimers)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+            payment_amount, requires_doctor_approval, rationale, disclaimers,
+            specialty, location, search_query)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
         (
             run_id, decision.get("urgency", "wellness"),
             decision.get("recommended_path", "self_care"),
@@ -326,6 +336,8 @@ def _save_routing(run_id: str, decision: Dict[str, Any]) -> None:
             float(decision.get("payment_amount_usd", 0)),
             int(decision.get("requires_doctor_approval", False)),
             decision.get("rationale"), json.dumps(decision.get("disclaimers", [])),
+            decision.get("specialty"), decision.get("location"),
+            decision.get("query") or decision.get("search_query"),
         ),
     )
     conn.execute(

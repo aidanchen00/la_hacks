@@ -50,6 +50,9 @@ export default function PharmacyPage() {
         setRequiresDoctorApproval(true);
       }
       if (run.intake_summary) setIntakeSummary(run.intake_summary);
+      // Tailor the search query to this session's intake context.
+      const sessionQuery = run.routing_decision?.search_query?.trim();
+      if (sessionQuery) setQuery(sessionQuery);
     }).catch(() => {});
     // Pick up any prior ranker selection (e.g. on page reload after payment)
     getRanker(runId, "pharmacy").then((data) => {
