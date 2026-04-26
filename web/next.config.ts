@@ -7,6 +7,13 @@ const nextConfig: NextConfig = {
       "mapbox-gl": "mapbox-gl/dist/mapbox-gl.js",
     },
   },
+  webpack: (config) => {
+    config.experiments = {
+      ...config.experiments,
+      asyncWebAssembly: true,
+    };
+    return config;
+  },
 };
 
 export default nextConfig;
