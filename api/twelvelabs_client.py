@@ -35,7 +35,8 @@ _cached_index_id: Optional[str] = None
 
 
 def _api_key() -> str:
-    return (os.getenv("TWELVE_LABS_API_KEY") or "").strip()
+    # Accept both spellings — older .env files use TWELVELABS_* (no underscore)
+    return (os.getenv("TWELVE_LABS_API_KEY") or os.getenv("TWELVELABS_API_KEY") or "").strip()
 
 
 def is_enabled() -> bool:
@@ -65,7 +66,7 @@ async def ensure_index() -> Optional[str]:
         )
         return None
 
-    env_id = (os.getenv("TWELVE_LABS_INDEX_ID") or "").strip()
+    env_id = (os.getenv("TWELVE_LABS_INDEX_ID") or os.getenv("TWELVELABS_INDEX_ID") or "").strip()
     if env_id:
         _cached_index_id = env_id
         logger.info("Twelve Labs: using configured index_id %s", env_id)

@@ -29,6 +29,34 @@ function getComposio(): any {
 }
 
 const DEFAULT_SUBREDDIT = process.env.PRANA_REDDIT_SUBREDDIT ?? "test";
+const FASTAPI_BASE = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000";
+
+/**
+ * Best-effort write to the FastAPI agent_events table so every Reddit attempt
+ * (success, failure, not-connected) is auditable later from the run timeline.
+ * Silent on failure — never breaks the user-facing response.
+ */
+async function logRedditEvent(
+  runId: string | undefined,
+  eventType: "reddit_posted" | "reddit_failed" | "reddit_skipped",
+  payload: Record<string, unknown>,
+): Promise<void> {
+  if (!runId) return; // No run → nothing to attach to.
+  try {
+    await fetch(`${FASTAPI_BASE}/internal/agent-event`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        run_id: runId,
+        agent_name: "reddit",
+        event_type: eventType,
+        payload,
+      }),
+    });
+  } catch {
+    // FastAPI down or unreachable — fall through.
+  }
+}
 
 export async function POST(req: NextRequest) {
   const body = (await req.json()) as RedditPostPayload;
@@ -75,9 +103,13 @@ export async function POST(req: NextRequest) {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const r = result as any;
     if (r?.successful === false || r?.error) {
+      const errMsg = r.error ?? r.message ?? "Composio reported failure";
+      await logRedditEvent(body.runId, "reddit_failed", {
+        subreddit, title, error: errMsg,
+      });
       return NextResponse.json({
         posted: false,
-        error: r.error ?? r.message ?? "Composio reported failure",
+        error: errMsg,
         composio: r,
       }, { status: 500 });
     }
@@ -88,6 +120,12 @@ export async function POST(req: NextRequest) {
     const inner = data?.json?.data ?? {};
     const postUrl = inner.url ?? data.url ?? data.shortlink ?? null;
     const postId = inner.id ?? data.id ?? data.name ?? null;
+
+    // Persist the post URL so it can be retrieved later from the run timeline,
+    // even if the user closes the modal before clicking through.
+    await logRedditEvent(body.runId, "reddit_posted", {
+      subreddit, title, url: postUrl, post_id: postId,
+    });
 
     return NextResponse.json({
       posted: true,
@@ -101,11 +139,17 @@ export async function POST(req: NextRequest) {
     const isNotConnected =
       /No connected account|ConnectedAccountNotFound|toolkit.*not.*connected/i.test(msg);
     if (isNotConnected) {
+      await logRedditEvent(body.runId, "reddit_skipped", {
+        subreddit, title, reason: "not_connected",
+      });
       return NextResponse.json(
         { posted: false, redditNotConnected: true, message: msg },
         { status: 200 },
       );
     }
+    await logRedditEvent(body.runId, "reddit_failed", {
+      subreddit, title, error: msg,
+    });
     return NextResponse.json({ posted: false, error: msg }, { status: 500 });
   }
 }

@@ -1,6 +1,8 @@
 "use client";
 
+import { useMemo } from "react";
 import type { RoutingDecision } from "@/lib/api";
+import { useTranslate } from "@/lib/translate";
 
 type CareKey = "telehealth" | "doctor" | "urgent_care" | "er" | "pharmacy";
 
@@ -35,6 +37,37 @@ interface Props {
 }
 
 export default function CostTransparency({ urgency, recommendedPath }: Props) {
+  // Hooks must run unconditionally — bail to null AFTER computing translations.
+  const STATIC_KEYS = useMemo(() => [
+    "What this might cost",                                                                            // 0
+    "Estimates for the LA area. Costs vary by location and provider.",                                 // 1
+    "With insurance · Without",                                                                        // 2
+    "Recommended for you",                                                                             // 3
+    "insured",                                                                                         // 4
+    "without",                                                                                         // 5
+    "Worried about cost?",                                                                             // 6
+    "Many California community clinics serve uninsured patients on a sliding-scale fee — what you pay depends on your income, not your insurance. Ask any provider about financial assistance programs. It's normal and you don't need documentation status to qualify in most cases.", // 7
+    "Telehealth visit",                                                                                // 8
+    "Doctor's office visit",                                                                           // 9
+    "Urgent care",                                                                                     // 10
+    "Emergency room",                                                                                  // 11
+    "Pharmacy / OTC medication",                                                                       // 12
+    "$0–$75 typical",                                                                                  // 13
+    "$5–$30 typical",                                                                                  // 14
+  ], []);
+  const t = useTranslate(STATIC_KEYS);
+  const labelByKey: Record<CareKey, string> = {
+    telehealth:  t[8],
+    doctor:      t[9],
+    urgent_care: t[10],
+    er:          t[11],
+    pharmacy:    t[12],
+  };
+  const uninsuredOverride: Partial<Record<CareKey, string>> = {
+    telehealth: t[13],
+    pharmacy:   t[14],
+  };
+
   if (urgency === "wellness") return null;
 
   const highlightedKey: CareKey =
@@ -54,10 +87,10 @@ export default function CostTransparency({ urgency, recommendedPath }: Props) {
       aria-label="Cost estimates"
     >
       <h2 style={{ margin: 0, fontSize: 20, fontWeight: 700, color: "var(--primary)" }}>
-        What this might cost
+        {t[0]}
       </h2>
       <p style={{ margin: "5px 0 20px", fontSize: 13, color: "var(--muted)", lineHeight: 1.5 }}>
-        Estimates for the LA area. Costs vary by location and provider.
+        {t[1]}
       </p>
 
       <div style={{
@@ -68,7 +101,7 @@ export default function CostTransparency({ urgency, recommendedPath }: Props) {
         marginBottom: 4,
       }}>
         <span style={{ fontSize: 11, color: "var(--muted)", fontWeight: 600, letterSpacing: "0.04em", textTransform: "uppercase" }}>
-          With insurance · Without
+          {t[2]}
         </span>
       </div>
 
@@ -94,7 +127,7 @@ export default function CostTransparency({ urgency, recommendedPath }: Props) {
                     color: highlighted ? "var(--text)" : "var(--muted)",
                     fontWeight: highlighted ? 600 : 400,
                   }}>
-                    {row.label}
+                    {labelByKey[row.key]}
                   </span>
                   {highlighted && (
                     <span style={{
@@ -107,7 +140,7 @@ export default function CostTransparency({ urgency, recommendedPath }: Props) {
                       letterSpacing: "0.03em",
                       whiteSpace: "nowrap",
                     }}>
-                      Recommended for you
+                      {t[3]}
                     </span>
                   )}
                 </div>
@@ -119,7 +152,7 @@ export default function CostTransparency({ urgency, recommendedPath }: Props) {
                       fontWeight: 700,
                       color: highlighted ? "var(--primary)" : "var(--muted)",
                     }}>
-                      {row.uninsured}
+                      {uninsuredOverride[row.key] ?? row.uninsured}
                     </span>
                   ) : (
                     <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-end", gap: 1 }}>
@@ -129,7 +162,7 @@ export default function CostTransparency({ urgency, recommendedPath }: Props) {
                         color: highlighted ? "var(--primary)" : "var(--muted)",
                       }}>
                         {row.insured}
-                        <span style={{ fontSize: 11, fontWeight: 400, color: "var(--muted)", marginLeft: 4 }}>insured</span>
+                        <span style={{ fontSize: 11, fontWeight: 400, color: "var(--muted)", marginLeft: 4 }}>{t[4]}</span>
                       </span>
                       <span style={{
                         fontSize: 13,
@@ -137,7 +170,7 @@ export default function CostTransparency({ urgency, recommendedPath }: Props) {
                         color: highlighted ? "var(--primary)" : "var(--muted)",
                       }}>
                         {row.uninsured}
-                        <span style={{ fontSize: 11, fontWeight: 400, color: "#475569", marginLeft: 4 }}>without</span>
+                        <span style={{ fontSize: 11, fontWeight: 400, color: "#475569", marginLeft: 4 }}>{t[5]}</span>
                       </span>
                     </div>
                   )}
@@ -160,8 +193,8 @@ export default function CostTransparency({ urgency, recommendedPath }: Props) {
         borderRadius: 10,
       }}>
         <p style={{ margin: 0, fontSize: 13, color: "var(--muted)", lineHeight: 1.75 }}>
-          <strong style={{ color: "var(--primary)", fontWeight: 600 }}>Worried about cost?</strong>{" "}
-          Many California community clinics serve uninsured patients on a sliding-scale fee — what you pay depends on your income, not your insurance. Ask any provider about financial assistance programs. It&apos;s normal and you don&apos;t need documentation status to qualify in most cases.
+          <strong style={{ color: "var(--primary)", fontWeight: 600 }}>{t[6]}</strong>{" "}
+          {t[7]}
         </p>
       </div>
     </div>
