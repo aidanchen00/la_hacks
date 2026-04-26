@@ -3,6 +3,7 @@ import { NextRequest, NextResponse } from "next/server";
 const TOOLKIT_SLUGS: Record<string, string[]> = {
   gmail: ["gmail"],
   googlesheets: ["googlesheets", "google_sheets"],
+  googlecalendar: ["googlecalendar", "google_calendar"],
 };
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any

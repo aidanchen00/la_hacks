@@ -251,6 +251,11 @@ export default function DoctorPage() {
     getRun(runId).then((run) => {
       if (run.intake_summary) setIntakeSummary(run.intake_summary);
       if (run.routing_decision?.urgency) setUrgency(run.routing_decision.urgency);
+      // Tailor the specialty + location to this session's intake context.
+      const sessionSpecialty = run.routing_decision?.specialty?.trim();
+      const sessionLocation = run.routing_decision?.location?.trim();
+      if (sessionSpecialty) setSpecialty(sessionSpecialty);
+      if (sessionLocation) setLocation(sessionLocation);
     }).catch(() => {});
     getRanker(runId, "doctor").then((data) => {
       if (data.items?.length) setRankerItems(data.items);
@@ -407,6 +412,48 @@ export default function DoctorPage() {
 
   const rankerSelected = rankerItems.filter((i) => i.selected);
   const rankerSelectedTotal = rankerSelected.reduce((s, i) => s + i.price, 0);
+
+  // One-shot: when Stripe redirects back with payment=success and we have a
+  // booked pick, log it to Google Calendar via Composio. Guarded by a
+  // localStorage key so a page reload doesn't double-log.
+  const calendarLoggedRef = useRef(false);
+  const [calendarLogged, setCalendarLogged] = useState<{ link?: string | null; notConnected?: boolean } | null>(null);
+  useEffect(() => {
+    if (paymentStatus !== "success") return;
+    if (calendarLoggedRef.current) return;
+    if (!rankerSelected.length) return;
+    const guardKey = `prana.calendar_logged.${runId}`;
+    if (typeof window !== "undefined" && localStorage.getItem(guardKey)) return;
+
+    calendarLoggedRef.current = true;
+    const top = rankerSelected[0];
+    const meta = (top.metadata ?? {}) as Record<string, unknown>;
+
+    fetch("/api/composio/calendar", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        runId,
+        provider: top.name,
+        specialty: typeof meta.specialty === "string" ? meta.specialty : undefined,
+        source: top.source_agent,
+        address: typeof meta.address === "string" ? meta.address : undefined,
+        time: typeof meta.time === "string" ? meta.time : undefined,
+        listingUrl: top.url ?? undefined,
+        amountPaid: rankerSelectedTotal,
+      }),
+    })
+      .then((r) => r.json())
+      .then((data) => {
+        if (data.logged) {
+          if (typeof window !== "undefined") localStorage.setItem(guardKey, "1");
+          setCalendarLogged({ link: data.htmlLink });
+        } else if (data.calendarNotConnected) {
+          setCalendarLogged({ notConnected: true });
+        }
+      })
+      .catch(() => { /* non-fatal */ });
+  }, [paymentStatus, rankerSelected, rankerSelectedTotal, runId]);
 
   const handleBookAppointment = async () => {
     if (!rankerSelected.length) return;
@@ -654,6 +701,34 @@ export default function DoctorPage() {
                     </div>
                   ))}
                 </div>
+
+                {/* Composio Google Calendar logger status */}
+                {calendarLogged?.link && (
+                  <div className="mt-3 pt-3 border-t border-[#16A34A]/20 text-xs text-[#16A34A] flex items-center gap-2">
+                    <span>📅 Added to your Google Calendar</span>
+                    <a
+                      href={calendarLogged.link}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="underline hover:opacity-70"
+                    >
+                      View event →
+                    </a>
+                  </div>
+                )}
+                {calendarLogged?.notConnected && (
+                  <div className="mt-3 pt-3 border-t border-[#16A34A]/20 text-xs text-[#6B7280] flex items-center gap-2">
+                    <span>📅 Connect Google Calendar to auto-log future bookings.</span>
+                    <a
+                      href="/api/composio/connect?toolkit=googlecalendar"
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="underline text-[#1F3A2E] hover:opacity-70"
+                    >
+                      Connect →
+                    </a>
+                  </div>
+                )}
               </motion.div>
             )}
             {paymentStatus === "cancel" && (
