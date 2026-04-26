@@ -1,4 +1,6 @@
-const BACKEND = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000";
+// Same-origin path so it works over ngrok (no mixed-content) AND on direct
+// localhost. Next.js rewrites /_api/* to FASTAPI_BASE_URL server-side.
+const BACKEND = process.env.NEXT_PUBLIC_API_URL ?? "/_api";
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
   const res = await fetch(`${BACKEND}${path}`, {

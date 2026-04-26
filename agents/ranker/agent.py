@@ -92,8 +92,12 @@ Selection rules:
 - You do NOT have to pick everything. Pick 0, 1, 2, or all candidates depending on fit.
 - If two candidates from different agents are essentially the same product/provider, prefer the \
   cheaper / faster / more available one and DO NOT select duplicates.
-- For pharmacy: prefer in-stock items, lower price, items that match the query intent. Never \
-  select prescription-only items if requires_doctor_approval is true.
+- For pharmacy: pick the SINGLE best overall item across ALL stores — do NOT pick one per store. \
+  Compare candidates across CVS, Walgreens, GoodRx as one pool and select whichever match is \
+  cheapest, in-stock, and most relevant to the query intent. Only select more than one item if \
+  the patient's symptoms genuinely require treatments for distinct issues (e.g. cough drops AND \
+  antacid for a patient reporting both a cough and a stomach ache). Never select prescription-only \
+  items if requires_doctor_approval is true.
 - For doctor: prefer earliest available time, accepts insurance, and reasonable distance. Pick \
   the single best appointment unless multiple specialties are needed.
 - Stay within total_budget_usd across all selected items.

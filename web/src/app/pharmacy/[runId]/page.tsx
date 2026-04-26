@@ -30,7 +30,7 @@ export default function PharmacyPage() {
   const [sessions, setSessions] = useState<SessionInfo[]>([]);
   const [started, setStarted] = useState(false);
   const [loading, setLoading] = useState(false);
-  const [query, setQuery] = useState("cold and flu relief");
+  const [query, setQuery] = useState("");
   const [totalBudget, setTotalBudget] = useState(100);
   const [requiresDoctorApproval, setRequiresDoctorApproval] = useState(false);
   const [cart, setCart] = useState<CartItem[]>([]);
@@ -399,7 +399,10 @@ export default function PharmacyPage() {
           {T.disclaimer}
         </div>
 
-        {!started ? (
+        {/* Search form only shows when there's no cart yet AND no live search
+            in progress. If the user lands on this page after a previous run
+            already filled the cart, skip straight to the receipt view below. */}
+        {!started && cart.length === 0 ? (
           <motion.div
             initial={{ opacity: 0, y: 20 }}
             animate={{ opacity: 1, y: 0 }}
@@ -459,7 +462,7 @@ export default function PharmacyPage() {
                 : `Search CVS · Walgreens · GoodRx ($${totalBudget})`}
             </motion.button>
           </motion.div>
-        ) : (
+        ) : started ? (
           <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }}>
             <p className="text-[#6B7280] text-sm mb-4">
               {T.searchingFor} <strong className="text-[#3D3D3D]">{query}</strong> {T.acrossPharmacies}
@@ -517,7 +520,7 @@ export default function PharmacyPage() {
               ))}
             </div>
           </motion.div>
-        )}
+        ) : null}
 
         {/* Ranker sidebar — shows what the Ranker agent picked vs everything found */}
         {(rankerLoading || rankerItems.length > 0) && (

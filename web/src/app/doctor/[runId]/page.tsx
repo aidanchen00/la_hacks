@@ -40,6 +40,89 @@ interface SessionInfo {
   mock?: boolean;
 }
 
+// Resolve America/Los_Angeles UTC offset on a given LA-local date — returns
+// "-07:00" or "-08:00" depending on whether DST is active that day.
+const LA_TZ = "America/Los_Angeles";
+function laOffsetForDate(year: number, month: number, day: number): string {
+  // Pick a moment ~noon LA on that date so we're far from any DST boundary.
+  const ref = new Date(Date.UTC(year, month - 1, day, 20, 0, 0));
+  const parts = new Intl.DateTimeFormat("en-US", {
+    timeZone: LA_TZ,
+    timeZoneName: "shortOffset",
+  }).formatToParts(ref);
+  const tzn = parts.find((p) => p.type === "timeZoneName")?.value ?? "GMT-8";
+  const m = tzn.match(/GMT([+-])(\d{1,2})(?::?(\d{2}))?/);
+  if (!m) return "-08:00";
+  return `${m[1]}${m[2].padStart(2, "0")}:${(m[3] ?? "00").padStart(2, "0")}`;
+}
+function laIso(y: number, mo: number, d: number, h: number, mi: number): string {
+  const pad = (n: number) => String(n).padStart(2, "0");
+  return `${y}-${pad(mo)}-${pad(d)}T${pad(h)}:${pad(mi)}:00${laOffsetForDate(y, mo, d)}`;
+}
+function todayInLA(): { y: number; m: number; d: number; weekday: number } {
+  const parts = new Intl.DateTimeFormat("en-US", {
+    timeZone: LA_TZ,
+    weekday: "short", year: "numeric", month: "numeric", day: "numeric",
+  }).formatToParts(new Date());
+  const get = (t: string) => parts.find((p) => p.type === t)?.value ?? "";
+  const wdMap: Record<string, number> = { Sun: 0, Mon: 1, Tue: 2, Wed: 3, Thu: 4, Fri: 5, Sat: 6 };
+  return {
+    y: Number(get("year")),
+    m: Number(get("month")),
+    d: Number(get("day")),
+    weekday: wdMap[get("weekday")] ?? 0,
+  };
+}
+const WEEKDAY_RX = /\b(sun(?:day)?|mon(?:day)?|tue(?:s|sday)?|wed(?:nesday)?|thu(?:r|rs|rsday)?|fri(?:day)?|sat(?:urday)?)\b/i;
+const WEEKDAY_MAP: Record<string, number> = {
+  sun: 0, sunday: 0, mon: 1, monday: 1, tue: 2, tues: 2, tuesday: 2,
+  wed: 3, wednesday: 3, thu: 4, thur: 4, thurs: 4, thursday: 4,
+  fri: 5, friday: 5, sat: 6, saturday: 6,
+};
+/**
+ * Parse fuzzy listing-time strings ("Tomorrow 10:00 AM", "Fri 2:30 PM",
+ * "Today 3pm") into an ISO timestamp anchored to America/Los_Angeles. Returns
+ * `null` for `iso` when the string lacks a time-of-day so callers can fall back
+ * to the calendar route's default.
+ */
+function parseAppointmentTime(raw: string | null | undefined): { iso: string | null; pretty: string } {
+  const text = (raw ?? "").trim();
+  if (!text) return { iso: null, pretty: "" };
+  const timeM = text.match(/(\d{1,2})(?::(\d{2}))?\s*(am|pm)/i);
+  if (!timeM) return { iso: null, pretty: text };
+  let hour = Number(timeM[1]);
+  const minute = Number(timeM[2] ?? "0");
+  const ampm = timeM[3].toLowerCase();
+  if (ampm === "pm" && hour < 12) hour += 12;
+  if (ampm === "am" && hour === 12) hour = 0;
+
+  const lower = text.toLowerCase();
+  const today = todayInLA();
+  const addDays = (n: number) => {
+    const t = new Date(Date.UTC(today.y, today.m - 1, today.d));
+    t.setUTCDate(t.getUTCDate() + n);
+    return { y: t.getUTCFullYear(), m: t.getUTCMonth() + 1, d: t.getUTCDate() };
+  };
+
+  let target: { y: number; m: number; d: number };
+  if (/\btoday\b/.test(lower)) {
+    target = { y: today.y, m: today.m, d: today.d };
+  } else if (/\btomorrow\b|\btmrw\b/.test(lower)) {
+    target = addDays(1);
+  } else {
+    const wdM = lower.match(WEEKDAY_RX);
+    if (wdM) {
+      const wd = WEEKDAY_MAP[wdM[1].toLowerCase()] ?? today.weekday;
+      let delta = (wd - today.weekday + 7) % 7;
+      if (delta === 0) delta = 7; // same weekday → next week
+      target = addDays(delta);
+    } else {
+      target = addDays(1); // best-guess fallback
+    }
+  }
+  return { iso: laIso(target.y, target.m, target.d, hour, minute), pretty: text };
+}
+
 function parseProviders(output: string | object | null | undefined): ProviderResult[] {
   if (!output) return [];
 
@@ -460,6 +543,8 @@ export default function DoctorPage() {
     calendarLoggedRef.current = true;
     const top = rankerSelected[0];
     const meta = (top.metadata ?? {}) as Record<string, unknown>;
+    const timeStr = typeof meta.time === "string" ? meta.time : undefined;
+    const parsedTime = parseAppointmentTime(timeStr);
 
     fetch("/api/composio/calendar", {
       method: "POST",
@@ -470,7 +555,8 @@ export default function DoctorPage() {
         specialty: typeof meta.specialty === "string" ? meta.specialty : undefined,
         source: top.source_agent,
         address: typeof meta.address === "string" ? meta.address : undefined,
-        time: typeof meta.time === "string" ? meta.time : undefined,
+        time: timeStr,
+        startIso: parsedTime.iso ?? undefined,
         listingUrl: top.url ?? undefined,
         amountPaid: rankerSelectedTotal,
       }),
@@ -688,7 +774,7 @@ export default function DoctorPage() {
               <strong className="text-[#3D3D3D]">{specialty}</strong> {T.inWord}{" "}
               <strong className="text-[#3D3D3D]">{location}</strong>
             </p>
-            <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-4">
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4 max-w-4xl mx-auto">
               {sessions.map((s) => (
                 <div
                   key={s.agent}
@@ -705,7 +791,7 @@ export default function DoctorPage() {
                     </span>
                   </div>
                   {s.mock ? (
-                    <div className="h-[340px] flex flex-col items-center justify-center text-center px-4 bg-[#F4F1EA]">
+                    <div className="aspect-[16/10] flex flex-col items-center justify-center text-center px-4 bg-[#F4F1EA]">
                       <span className="text-[10px] font-bold uppercase tracking-widest px-2.5 py-1 rounded-full bg-[#FEF3C7] text-[#D97706] mb-3">
                         {T.demoMode}
                       </span>
@@ -717,12 +803,11 @@ export default function DoctorPage() {
                   ) : s.liveUrl ? (
                     <iframe
                       src={s.liveUrl}
-                      className="w-full border-none"
-                      style={{ height: 340 }}
+                      className="w-full border-none aspect-[16/10] block"
                       title={`${s.agent} browser session`}
                     />
                   ) : (
-                    <div className="h-[340px] flex items-center justify-center text-[#6B7280] text-sm">
+                    <div className="aspect-[16/10] flex items-center justify-center text-[#6B7280] text-sm">
                       {s.error ? `Error: ${s.error}` : T.waitingLive}
                     </div>
                   )}
@@ -807,7 +892,14 @@ export default function DoctorPage() {
             {/* Always-visible Book CTA: shows once any provider is parsed,
                 regardless of ranker state. Falls back to the first provider
                 if the ranker hasn't selected anything yet. */}
-            {canBook && paymentStatus !== "success" && (
+            {canBook && paymentStatus !== "success" && (() => {
+              // Pull the listing time off the top ranker pick (or the fallback
+              // provider) so the user sees the slot they're paying for.
+              const topMeta = (rankerSelected[0]?.metadata ?? {}) as Record<string, unknown>;
+              const ctaTimeStr = (typeof topMeta.time === "string" && topMeta.time.trim())
+                || fallbackProvider?.provider.time
+                || "";
+              return (
               <motion.div
                 initial={{ opacity: 0, y: 10 }}
                 animate={{ opacity: 1, y: 0 }}
@@ -823,6 +915,13 @@ export default function DoctorPage() {
                     {bookableItems[0]?.source_agent} · {bookableItems[0]?.name}
                     {bookableItems.length > 1 ? ` (+${bookableItems.length - 1} more)` : ""}
                   </div>
+                  {ctaTimeStr && (
+                    <div className="text-sm text-white mt-2 inline-flex items-center gap-1.5 bg-white/10 rounded-full px-3 py-1">
+                      <span>📅</span>
+                      <span>{ctaTimeStr}</span>
+                      <span className="text-white/60">· PT</span>
+                    </div>
+                  )}
                   {bookingError && (
                     <div className="text-[#FCA5A5] text-sm mt-2">{bookingError}</div>
                   )}
@@ -839,7 +938,8 @@ export default function DoctorPage() {
                     : `Book & Pay $${bookableItems.reduce((s, i) => s + (i.price ?? 0), 0).toFixed(2)}`}
                 </motion.button>
               </motion.div>
-            )}
+              );
+            })()}
 
             {/* Payment success / cancel banners */}
             {paymentStatus === "success" && rankerSelected.length > 0 && (

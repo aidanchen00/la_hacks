@@ -35,9 +35,13 @@ function pickMimeType(): string {
 export function VideoIntakeStep({
   runId,
   onDone,
+  onContinueTalking,
 }: {
   runId: string;
+  /** Skip / upload finished → go to dashboard. */
   onDone: () => void;
+  /** User wants to keep talking instead of finishing the intake. */
+  onContinueTalking?: () => void;
 }) {
   const [phase, setPhase] = useState<Phase>("prompt");
   const [error, setError] = useState<string>("");
@@ -188,11 +192,19 @@ export function VideoIntakeStep({
             >
               🎥 Record video
             </button>
+            {onContinueTalking && (
+              <button
+                onClick={onContinueTalking}
+                className="w-full bg-white text-[#1F3A2E] border border-[#1F3A2E]/30 rounded-full font-medium text-lg min-h-[56px] hover:bg-[#EFEAE0] transition-colors"
+              >
+                💬 Keep talking with Prana
+              </button>
+            )}
             <button
               onClick={onDone}
               className="text-[#3D3D3D] text-sm underline underline-offset-2 hover:text-[#1F3A2E] py-3 min-h-[44px]"
             >
-              Skip
+              Skip → see summary
             </button>
           </>
         )}
@@ -266,8 +278,16 @@ export function VideoIntakeStep({
               onClick={onDone}
               className="w-full bg-[#1F3A2E] text-white rounded-full font-medium text-lg min-h-[56px] hover:bg-[#2A4D3D] transition-colors"
             >
-              Continue
+              Go to summary
             </button>
+            {onContinueTalking && (
+              <button
+                onClick={onContinueTalking}
+                className="w-full bg-white text-[#1F3A2E] border border-[#1F3A2E]/30 rounded-full font-medium text-lg min-h-[56px] hover:bg-[#EFEAE0] transition-colors"
+              >
+                💬 Talk to Prana more
+              </button>
+            )}
           </>
         )}
 

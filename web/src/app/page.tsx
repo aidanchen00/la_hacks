@@ -20,7 +20,7 @@ import { postIntake, listRuns, type RunSummary } from "@/lib/api";
 import { getStoredNullifier, setStoredNullifier } from "@/lib/auth";
 import { useRouter, useSearchParams } from "next/navigation";
 import { motion } from "motion/react";
-import { Clock, Globe, Settings, Check } from "lucide-react";
+import { Clock, Globe, User, Check } from "lucide-react";
 import WorldIDGate from "@/components/WorldIDGate";
 import { VideoIntakeStep } from "@/components/VideoIntakeStep";
 
@@ -31,6 +31,7 @@ const LANG_LABELS: Record<Lang, string> = { en: "EN", es: "ES", zh: "普通话" 
 const TRANSLATIONS = {
   en: {
     history: "History",
+    profile: "Profile",
     tagline: "Voice-first · Powered by AI agents",
     startTalking: "Start talking",
     typeSymptoms: "Or type your symptoms",
@@ -43,6 +44,7 @@ const TRANSLATIONS = {
   },
   es: {
     history: "Historial",
+    profile: "Perfil",
     tagline: "Voz primero · Impulsado por agentes de IA",
     startTalking: "Empieza a hablar",
     typeSymptoms: "O escribe tus síntomas",
@@ -55,6 +57,7 @@ const TRANSLATIONS = {
   },
   zh: {
     history: "历史记录",
+    profile: "个人资料",
     tagline: "语音优先 · 由 AI 智能体提供支持",
     startTalking: "开始说话",
     typeSymptoms: "或输入您的症状",
@@ -605,6 +608,16 @@ function VoiceIntake({ onShowHistory, language, onLanguageChange }: {
           setPendingVideoRunId(null);
           router.push(`/dashboard?run_id=${id}`);
         }}
+        onContinueTalking={() => {
+          // User isn't done yet — re-open the voice session and let them keep
+          // talking. The intake row was already submitted (the agent fired
+          // finish_intake), but additional turns can still surface new symptoms
+          // and the next finish_intake call will re-show this screen.
+          setPendingVideoRunId(null);
+          // Restart LiveKit session — the previous one was .end()'d in
+          // handleIntakeComplete. `started` is still true so RoomView re-renders.
+          session.start().catch(console.error);
+        }}
       />
     );
   }
@@ -666,10 +679,12 @@ function VoiceIntake({ onShowHistory, language, onLanguageChange }: {
             </div>
 
             <button
-              aria-label="Settings"
-              className="flex items-center gap-1.5 p-2.5 rounded-full border border-[#1F3A2E]/20 text-[#3D3D3D] hover:border-[#1F3A2E]/40 transition-colors min-h-[44px]"
+              onClick={() => router.push("/profile")}
+              aria-label={t.profile}
+              className="flex items-center gap-1.5 px-3 py-2.5 rounded-full border border-[#1F3A2E]/20 text-[#3D3D3D] text-sm hover:border-[#1F3A2E]/40 transition-colors min-h-[44px]"
             >
-              <Settings className="w-4 h-4" />
+              <User className="w-3.5 h-3.5" />
+              <span className="hidden sm:inline">{t.profile}</span>
             </button>
           </div>
         </nav>

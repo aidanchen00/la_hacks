@@ -32,11 +32,34 @@ function getComposio(): any {
   return new Composio({ apiKey: process.env.COMPOSIO_API_KEY! });
 }
 
+const LA_TZ = "America/Los_Angeles";
+
+// Resolve LA's UTC offset (handles PDT vs PST) for a given LA-local calendar date.
+function laOffsetForDate(year: number, month: number, day: number): string {
+  const ref = new Date(Date.UTC(year, month - 1, day, 20, 0, 0));
+  const parts = new Intl.DateTimeFormat("en-US", {
+    timeZone: LA_TZ,
+    timeZoneName: "shortOffset",
+  }).formatToParts(ref);
+  const tzn = parts.find((p) => p.type === "timeZoneName")?.value ?? "GMT-8";
+  const m = tzn.match(/GMT([+-])(\d{1,2})(?::?(\d{2}))?/);
+  if (!m) return "-08:00";
+  return `${m[1]}${m[2].padStart(2, "0")}:${(m[3] ?? "00").padStart(2, "0")}`;
+}
+
+// "Tomorrow 10:00 AM Pacific" as ISO with the correct LA offset.
 function defaultStartIso(): string {
-  const d = new Date();
-  d.setDate(d.getDate() + 1);
-  d.setHours(10, 0, 0, 0);
-  return d.toISOString();
+  const parts = new Intl.DateTimeFormat("en-US", {
+    timeZone: LA_TZ, year: "numeric", month: "numeric", day: "numeric",
+  }).formatToParts(new Date());
+  const get = (t: string) => Number(parts.find((p) => p.type === t)?.value ?? "0");
+  const todayUtc = new Date(Date.UTC(get("year"), get("month") - 1, get("day")));
+  todayUtc.setUTCDate(todayUtc.getUTCDate() + 1);
+  const y = todayUtc.getUTCFullYear();
+  const mo = todayUtc.getUTCMonth() + 1;
+  const d = todayUtc.getUTCDate();
+  const pad = (n: number) => String(n).padStart(2, "0");
+  return `${y}-${pad(mo)}-${pad(d)}T10:00:00${laOffsetForDate(y, mo, d)}`;
 }
 
 export async function POST(req: NextRequest) {
@@ -73,9 +96,10 @@ export async function POST(req: NextRequest) {
         location: body.address ?? "",
         start_datetime: startIso,
         end_datetime: endIso,
-        // Composio's GOOGLECALENDAR_CREATE_EVENT also accepts these — IANA tz
-        // is required by Google for non-UTC offsets.
-        timezone: Intl.DateTimeFormat().resolvedOptions().timeZone || "America/Los_Angeles",
+        // Pacific Time for every Prana calendar log — keeps audit trail and
+        // user's calendar event in the same zone regardless of where the
+        // request is processed.
+        timezone: LA_TZ,
       },
       dangerouslySkipVersionCheck: true,
     });
