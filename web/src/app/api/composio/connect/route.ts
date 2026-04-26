@@ -1,9 +1,18 @@
 import { NextRequest, NextResponse } from "next/server";
+import { entityFor } from "../_entity";
 
 const TOOLKIT_SLUGS: Record<string, string[]> = {
   gmail: ["gmail"],
   googlesheets: ["googlesheets", "google_sheets"],
   googlecalendar: ["googlecalendar", "google_calendar"],
+  googledrive: ["googledrive", "google_drive"],
+};
+
+const TOOLKIT_TO_ENTITY_KEY: Record<string, "gmail" | "sheets" | "calendar" | "drive"> = {
+  gmail: "gmail",
+  googlesheets: "sheets",
+  googlecalendar: "calendar",
+  googledrive: "drive",
 };
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -20,7 +29,11 @@ function getComposio(): any {
 
 export async function GET(request: NextRequest) {
   const toolkit = request.nextUrl.searchParams.get("toolkit") ?? "gmail";
-  const entityId = process.env.COMPOSIO_USER_ID ?? "default";
+  // Allow ad-hoc override (e.g. ?userId=cris-refire) when the per-toolkit env
+  // var hasn't been set yet — useful while wiring up a brand-new connection.
+  const overrideUserId = request.nextUrl.searchParams.get("userId");
+  const entityId = overrideUserId
+    ?? (TOOLKIT_TO_ENTITY_KEY[toolkit] ? entityFor(TOOLKIT_TO_ENTITY_KEY[toolkit]) : (process.env.COMPOSIO_USER_ID ?? "default"));
   try {
     const composio = getComposio();
     const accounts = await composio.connectedAccounts.list({ entityId });

@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { entityFor } from "../_entity";
 
 export const maxDuration = 30;
 
@@ -10,7 +11,7 @@ function getComposio(): any {
 
 export async function POST(req: NextRequest) {
   const row = (await req.json()) as Record<string, string>;
-  const entityId = process.env.COMPOSIO_USER_ID ?? "default";
+  const entityId = entityFor("sheets");
   // Prefer the new PRANA_SHEETS_ID; fall back to the legacy DOMUS_SHEETS_ID.
   const sheetsId = process.env.PRANA_SHEETS_ID ?? process.env.DOMUS_SHEETS_ID ?? "";
 

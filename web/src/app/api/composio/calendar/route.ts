@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { entityFor } from "../_entity";
 
 export const maxDuration = 30;
 
@@ -40,7 +41,7 @@ function defaultStartIso(): string {
 
 export async function POST(req: NextRequest) {
   const body = (await req.json()) as CalendarBookingPayload;
-  const entityId = process.env.COMPOSIO_USER_ID ?? "default";
+  const entityId = entityFor("calendar");
 
   const startIso = body.startIso ?? defaultStartIso();
   const durationMin = body.durationMinutes ?? 30;

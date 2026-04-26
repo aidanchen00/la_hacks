@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { entityFor } from "../_entity";
 
 export const maxDuration = 30;
 
@@ -10,7 +11,7 @@ function getComposio(): any {
 
 export async function POST(req: NextRequest) {
   const { to, subject, body } = (await req.json()) as { to?: string; subject?: string; body?: string };
-  const entityId = process.env.COMPOSIO_USER_ID ?? "default";
+  const entityId = entityFor("gmail");
   const recipient = to ?? process.env.DOMUS_DEFAULT_EMAIL ?? "aidanchen00@hotmail.com";
   const emailSubject = subject ?? "Your CareFlow Wellness Intake Summary";
   const emailBody = body ?? "<p>Your intake has been recorded.</p>";
