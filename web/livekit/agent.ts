@@ -22,6 +22,28 @@ dotenv.config({ path: "../../.env" });
 // Alt-medicine tradition personas (keyed by room name prefix altmed-<key>-)
 // ---------------------------------------------------------------------------
 
+// Mental-wellness persona — empathetic psychiatrist. Activated when room name
+// starts with `mental-`. Uses a slower, warmer Eleven Labs voice and skips the
+// alt-med tools.
+const PSYCHIATRIST_PERSONA = `You are Dr. Aria, a warm, experienced clinical psychiatrist with 20+ years of practice in trauma, anxiety, depression, and burnout. You meet the user with deep empathy and presence. Your goal is to help the user feel heard, validate their experience, gently surface what's beneath the surface, and walk them through coping skills they can use right now.
+
+THERAPEUTIC STYLE:
+- Reflective listening first: name the feeling beneath what they said before responding ("That sounds really exhausting…").
+- Validate their experience without minimizing or rushing to fix.
+- Use grounding techniques (5-4-3-2-1 senses, paced breathing, body scan) when the user seems activated or panicked.
+- Use cognitive reframing gently — never lecture. Offer one perspective at a time as a question, not a directive.
+- Ask one open-ended question per turn, never a list.
+- Acknowledge the courage it takes to share what they're sharing.
+- Speak slowly, with natural pauses. This is voice — keep responses to 1-3 sentences.
+
+WHAT NOT TO DO:
+- Do not diagnose. Do not prescribe medications.
+- Do not say "have you tried…?" — it minimizes.
+- Do not pivot to advice before the user feels heard.
+- No bullet points, formatting, or asterisks. Spoken audio only.
+
+EMERGENCY: If the user expresses suicidal ideation, intent, or active self-harm, gently say you're concerned and recommend the 988 Suicide & Crisis Lifeline (call or text 988). Stay with them. Do not try to talk them out of it — just be present and direct them to immediate human support.`;
+
 const ALT_MED_PERSONAS: Record<string, string> = {
   TCM: "You are a senior Traditional Chinese Medicine practitioner with 30+ years of experience. You give direct, confident, personalized advice using TCM frameworks: Qi flow, yin/yang balance, the five elements, meridians, herbal formulas (e.g., gui zhi tang, bu zhong yi qi tang), acupuncture points, and dietary therapy. Diagnose patterns (e.g., 'spleen qi deficiency', 'liver qi stagnation') and recommend specific herbs, foods, acupressure points, and lifestyle adjustments tailored to the user.",
   Ayurveda: "You are an experienced Ayurvedic vaidya (doctor) with deep clinical practice. Give direct, confident advice grounded in Ayurveda: identify the user's likely dosha imbalance (Vata, Pitta, Kapha), recommend specific herbs (ashwagandha, triphala, brahmi, turmeric, etc.), dinacharya routines, dietary changes by dosha, pranayama, and abhyanga oil massage. Be specific with dosages, timing, and combinations.",
@@ -131,9 +153,12 @@ export default defineAgent({
     await ctx.connect();
     const participant = await ctx.waitForParticipant();
 
-    // Detect alt-medicine session by room name prefix: altmed-<TraditionKey>-<random>
+    // Detect specialized sessions by room name prefix.
+    //   altmed-<TraditionKey>-<random>  → alt-medicine practitioner
+    //   mental-<runId>-<random>         → psychiatrist (Dr. Aria)
     const roomName = ctx.room.name;
-    const isAltMed = roomName.startsWith("altmed-");
+    const isAltMed  = roomName.startsWith("altmed-");
+    const isMental  = roomName.startsWith("mental-");
 
     // Read language + intake context from participant metadata
     let sessionLang: "en" | "es" | "zh" = "en";
@@ -189,6 +214,30 @@ LANGUAGE: ${langDirective[sessionLang] ?? langDirective.en}`;
         greetingInstructions = greetByLang[sessionLang] ?? greetByLang.en;
         console.info(`[Prana] Alt-medicine session: tradition=${traditionKey} lang=${sessionLang} hasContext=${!!intakeContext}`);
       }
+    } else if (isMental) {
+      const contextBlock = intakeContext
+        ? `\n\nUSER'S RECENT INTAKE (use this to shape the conversation — reference their specific concerns where appropriate, and help them explore the emotional layer beneath the surface):\n${intakeContext}\n\nDo NOT read it back to them mechanically. Use it as background.`
+        : "";
+      const langDirective: Record<string, string> = {
+        en: "Respond ONLY in English.",
+        es: "IMPORTANTE: Responde ÚNICAMENTE en español. Toda comunicación debe ser en español.",
+        zh: "重要：仅用中文（普通话）回复。所有交流必须用中文。",
+      };
+      instructions = `${PSYCHIATRIST_PERSONA}${contextBlock}\n\nLANGUAGE: ${langDirective[sessionLang] ?? langDirective.en}`;
+      tools = {};
+      const greetByLang: Record<string, string> = {
+        en: intakeContext
+          ? `Greet the user softly and warmly as Dr. Aria. Acknowledge that you've reviewed what brought them in (without listing it back) and create space for them to share more. Open with something like "I'm so glad you're here. Take your breath for a second — there's no rush. What's been weighing on you most this week?" One or two short sentences. SPEAK IN ENGLISH.`
+          : `Greet the user softly and warmly as Dr. Aria. Create space — let them know there's no rush. Ask a gentle open question like "What's been weighing on you most lately?" One or two short sentences. SPEAK IN ENGLISH.`,
+        es: intakeContext
+          ? `Saluda al usuario con calidez y suavidad como la Dra. Aria. Reconoce que has visto lo que les trajo aquí (sin enumerarlo) y dales espacio para compartir más. Una o dos oraciones cortas. RESPONDE EN ESPAÑOL.`
+          : `Saluda al usuario con calidez y suavidad como la Dra. Aria. Dale espacio — sin prisa. Pregunta gentilmente "¿Qué te ha estado pesando últimamente?" Una o dos oraciones. RESPONDE EN ESPAÑOL.`,
+        zh: intakeContext
+          ? `用温柔关怀的语气问候用户，介绍自己是Aria医生。委婉地表示你已了解他们的情况（不要逐条复述），给他们空间继续分享。一两句话即可。请用中文回答。`
+          : `用温柔关怀的语气问候用户，介绍自己是Aria医生。给他们空间，慢慢来。轻声问："最近什么事情让你最难受？" 一两句话即可。请用中文回答。`,
+      };
+      greetingInstructions = greetByLang[sessionLang] ?? greetByLang.en;
+      console.info(`[Prana] Mental-wellness session: lang=${sessionLang} hasContext=${!!intakeContext}`);
     } else {
       console.info(`[Prana] Participant joined: ${participant.identity}`);
     }
@@ -206,7 +255,7 @@ LANGUAGE: ${langDirective[sessionLang] ?? langDirective.en}`;
       zh: "用中文热情地问候用户。介绍自己是Prana，一个健康护理导航助手。简要说明你不是医生，这不是医疗建议——紧急情况请拨打911。然后询问用户今天想讨论什么健康问题。保持温暖简短。",
     };
 
-    if (!isAltMed) {
+    if (!isAltMed && !isMental) {
       instructions = `${instructions}\n\nLANGUAGE: ${LANG_INSTRUCTIONS[sessionLang] ?? LANG_INSTRUCTIONS.en}`;
       greetingInstructions = LANG_GREETINGS[sessionLang] ?? LANG_GREETINGS.en;
     }
@@ -218,6 +267,8 @@ LANGUAGE: ${langDirective[sessionLang] ?? langDirective.en}`;
 
     // STTv2 is Deepgram's Flux API — only flux-general-en / flux-general-multi are valid.
     // Use Flux for English (lowest latency); multi for Spanish; OpenAI Whisper for Chinese.
+    // Higher eagerEotThreshold (0.7) = STT waits longer before declaring end-of-utterance,
+    // which prevents short bursts of agent-echo from being treated as a turn boundary.
     const stt = sessionLang === "zh"
       ? new openai.STT({ language: "zh" })
       : sessionLang === "es"
@@ -225,20 +276,35 @@ LANGUAGE: ${langDirective[sessionLang] ?? langDirective.en}`;
           apiKey: process.env.DEEPGRAM_API_KEY,
           model: "flux-general-multi",
           languageHint: ["es"],
-          eagerEotThreshold: 0.4,
+          eagerEotThreshold: 0.7,
         })
       : new deepgram.STTv2({
           apiKey: process.env.DEEPGRAM_API_KEY,
           model: "flux-general-en",
-          eagerEotThreshold: 0.4,
+          eagerEotThreshold: 0.7,
         });
 
     const session = new voice.AgentSession({
       vad: ctx.proc.userData.vad as silero.VAD,
       stt,
       llm: new openai.LLM({ model: "gpt-4.1-mini" }),
-      tts: new elevenlabs.TTS({ apiKey: process.env.ELEVENLABS_API_KEY, modelID: "eleven_turbo_v2_5", voiceId: "Xb7hH8MSUJpSbSDYk0k2" }),
-      turnDetection: "stt",
+      tts: new elevenlabs.TTS({
+        apiKey: process.env.ELEVENLABS_API_KEY,
+        modelID: "eleven_turbo_v2_5",
+        // Mental-wellness uses a softer, calmer voice (Sarah). Other rooms keep the
+        // existing default voice. Higher stability + lower style = slower, more even
+        // pacing; well-suited for grounding/breathing exercises.
+        voiceId: isMental ? "EXAVITQu4vr4xnSDxMAh" : "Xb7hH8MSUJpSbSDYk0k2",
+        ...(isMental && {
+          voiceSettings: { stability: 0.75, similarity_boost: 0.6, style: 0.15, speed: 0.95, use_speaker_boost: true },
+        }),
+      }),
+      // VAD-based turn detection (silero) is far better than STT-based at telling
+      // real user speech apart from echoed agent audio bleeding through the mic.
+      // Combined with a 0.5s minimum interruption window, this stops the agent
+      // from cutting itself off after one syllable.
+      turnDetection: "vad",
+      minInterruptionDuration: 0.5,
     });
 
     session.on(voice.AgentSessionEventTypes.ConversationItemAdded, async (ev) => {
