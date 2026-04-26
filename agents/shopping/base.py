@@ -97,7 +97,7 @@ def make_seller_agent(
                     payment_method="stripe",
                 )
             ],
-            recipient=ctx.address,
+            recipient=ctx.agent.address,
             deadline_seconds=120,
             reference=reference,
             description=f"{platform} shopping service — ${msg.allocated_usd:.2f} budget",

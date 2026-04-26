@@ -12,10 +12,10 @@ function getComposio(): any {
 export async function POST(req: NextRequest) {
   const { to, subject, body } = (await req.json()) as { to?: string; subject?: string; body?: string };
   const entityId = entityFor("gmail");
-  const recipient = to ?? process.env.DOMUS_DEFAULT_EMAIL ?? "aidanchen00@hotmail.com";
-  const emailSubject = subject ?? "Your CareFlow Wellness Intake Summary";
+  const recipient = to ?? process.env.PRANA_DEFAULT_EMAIL ?? "aidanchen00@hotmail.com";
+  const emailSubject = subject ?? "Your Prana Wellness Intake Summary";
   const emailBody = body ?? "<p>Your intake has been recorded.</p>";
-  const SIGNATURE = "<p>Best regards,<br>The CareFlow Team<br><em>CareFlow is a wellness education and care-navigation tool — not a replacement for licensed medical care.</em></p>";
+  const SIGNATURE = "<p>Best regards,<br>The Prana Team<br><em>Prana is a wellness education and care-navigation tool — not a replacement for licensed medical care.</em></p>";
   const bodyWithSignature = `${emailBody}${SIGNATURE}`;
 
   try {

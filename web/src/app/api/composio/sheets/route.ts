@@ -12,9 +12,9 @@ function getComposio(): any {
 export async function POST(req: NextRequest) {
   const row = (await req.json()) as Record<string, string>;
   const entityId = entityFor("sheets");
-  const sheetsId = process.env.PRANA_SHEETS_ID ?? process.env.DOMUS_SHEETS_ID ?? "";
+  const sheetsId = process.env.PRANA_SHEETS_ID ?? "";
 
-  if (!sheetsId) return NextResponse.json({ saved: false, error: "PRANA_SHEETS_ID (or legacy DOMUS_SHEETS_ID) not set" });
+  if (!sheetsId) return NextResponse.json({ saved: false, error: "PRANA_SHEETS_ID not set" });
 
   // Column order MUST match the spreadsheet's header row exactly:
   // A: run_id | B: timestamp | C: user_email | D: summary | E: symptoms |

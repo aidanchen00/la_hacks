@@ -1,5 +1,5 @@
 """
-CareFlow inter-agent Pydantic message types.
+Prana inter-agent Pydantic message types.
 All extend uagents.Model for ctx.send() compatibility.
 """
 from typing import Any, Dict, List, Optional
@@ -7,7 +7,7 @@ from uagents import Model
 
 
 class IntakeRequest(Model):
-    """FastAPI / CareFlow agent → Orchestrator: process a new intake."""
+    """FastAPI / Prana agent → Orchestrator: process a new intake."""
     run_id: str
     transcript: str
     summary: str
@@ -16,7 +16,7 @@ class IntakeRequest(Model):
 
 
 class RoutingDecision(Model):
-    """Orchestrator → FastAPI / CareFlow agent: routing result."""
+    """Orchestrator → FastAPI / Prana agent: routing result."""
     run_id: str
     urgency: str  # emergency | urgent | routine | wellness
     recommended_path: str  # doctor | pharmacy | mental_health | alt_medicine | self_care
@@ -46,7 +46,7 @@ class SpecialistResult(Model):
 
 
 # ---------------------------------------------------------------------------
-# Fetch.ai Agent Payment Protocol messages (mirrors kaimon/Stripe horoscope)
+# Fetch.ai Agent Payment Protocol messages (Stripe horoscope pattern)
 # ---------------------------------------------------------------------------
 
 class PaymentRequest(Model):
@@ -82,11 +82,11 @@ class PaymentCancel(Model):
 # ---------------------------------------------------------------------------
 
 class BudgetRequest(Model):
-    """CareFlow orchestrator → Budget Agent: kick off a shopping run."""
+    """Prana orchestrator → Budget Agent: kick off a shopping run."""
     run_id: str
     query: str               # e.g. "cold and flu relief"
     total_budget_usd: float
-    requester_address: str   # careflow agent address for callback
+    requester_address: str   # prana agent address for callback
 
 
 class BudgetAllocation(Model):
@@ -168,7 +168,7 @@ class RankerResult(Model):
 # ---------------------------------------------------------------------------
 
 class AppointmentSearchRequest(Model):
-    """CareFlow → ZocDoc/Healthgrades/Solv: search for providers."""
+    """Prana → ZocDoc/Healthgrades/Solv: search for providers."""
     run_id: str
     query: str            # specialty, e.g. "primary care"
     location: str         # e.g. "Los Angeles, CA"
@@ -176,7 +176,7 @@ class AppointmentSearchRequest(Model):
 
 
 class AppointmentResult(Model):
-    """ZocDoc/Healthgrades/Solv → CareFlow: parsed provider list."""
+    """ZocDoc/Healthgrades/Solv → Prana: parsed provider list."""
     run_id: str
     agent_name: str       # zocdoc | healthgrades | solv
     platform: str         # ZocDoc | Healthgrades | Solv

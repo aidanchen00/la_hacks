@@ -72,19 +72,28 @@ function buildDoctorTask(site: string, specialty: string, location: string): str
 }
 
 function buildPharmacyTask(site: string, query: string): string {
-  const urls: Record<string, string> = {
+  // Search-results URLs as a fallback: CVS/Walgreens often show heavy
+  // anti-bot interstitials on the homepage but render results directly when
+  // navigating to the search URL. Try both.
+  const homeUrls: Record<string, string> = {
     CVS: "https://www.cvs.com",
     Walgreens: "https://www.walgreens.com",
     GoodRx: "https://www.goodrx.com",
   };
+  const searchUrls: Record<string, string> = {
+    CVS: `https://www.cvs.com/search?searchTerm=${encodeURIComponent(query)}`,
+    Walgreens: `https://www.walgreens.com/search/results.jsp?Ntt=${encodeURIComponent(query)}`,
+    GoodRx: `https://www.goodrx.com/search?query=${encodeURIComponent(query)}`,
+  };
   return [
     `You are a pharmacy/wellness product search agent using ${site}.`,
-    `1. Go to ${urls[site]}`,
-    `2. Search for "${query}"`,
-    "3. List up to 5 relevant OTC products with price, dosage info, and listing URL.",
-    "4. Mark requiresPrescription=true ONLY if it is clearly a prescription-only medication.",
-    "5. Return JSON with source and items array.",
-    "DISCLAIMER: This information is for educational purposes only. Consult a licensed pharmacist or doctor before purchasing medications.",
+    `1. Go directly to the search results URL: ${searchUrls[site]}. If that URL fails to load or shows an error, fall back to ${homeUrls[site]} and use the on-page search input to look up "${query}".`,
+    `2. WAIT for the page to be fully interactive. If you see a CAPTCHA, cookie banner, "Are you human", region picker, age gate, or "Press & Hold" challenge — close/dismiss it and continue. Do NOT stop on the first interstitial.`,
+    `3. SCROLL the results list at least once so product cards are visible. If the page is still loading after the first scroll, wait 2 seconds and scroll again.`,
+    `4. Extract up to 5 OTC product results most relevant to "${query}". For each, capture: name, price (number, no currency symbol), dosage if shown (e.g. "200 mg"), listingUrl (the absolute URL to the product detail page on ${site}), and requiresPrescription (true ONLY if the product is clearly Rx-only — assume false for OTC items).`,
+    `5. Persistence rule: do NOT mark this task complete until you have EITHER (a) extracted at least one product, OR (b) confirmed via on-page text that the search returned zero results. If the first attempt hits a captcha or empty state, RETRY the search once via the search input.`,
+    `6. Return STRICT JSON matching this shape: {"source": "${site}", "items": [{"name": "...", "price": "...", "dosage": "...", "listingUrl": "...", "requiresPrescription": false}, ...]}.`,
+    `DISCLAIMER: Wellness/education only. The user should consult a licensed pharmacist before purchase.`,
   ].join("\n");
 }
 
@@ -161,12 +170,18 @@ export async function POST(request: NextRequest) {
 
   const outcomes = await Promise.allSettled(
     sites.map(async (site) => {
+      // Doctor: BYOK gpt-5.4-mini — cheap, works on doctor sites.
+      // Pharmacy: bu-max — gpt-5.4-mini can't pass CVS/GoodRx anti-bot walls,
+      // so override with BrowserUse's browser-tuned model for retail sites.
+      const model = (
+        mode === "pharmacy"
+          ? (process.env.BROWSER_USE_PHARMACY_MODEL ?? "bu-max")
+          : (process.env.BROWSER_USE_MODEL ?? "gpt-5.4-mini")
+      ) as BuModel;
       const session = await client.sessions.create({
         keepAlive: true,
         task: mode === "doctor" ? buildDoctorTask(site, specialty, loc) : buildPharmacyTask(site, pharmQuery),
-        // v3 BuModel: gpt-5.4-mini routes through the user's BYOK OpenAI key
-        // so LLM cost bills against OpenAI instead of BrowserUse task credits.
-        model: (process.env.BROWSER_USE_MODEL ?? "gpt-5.4-mini") as BuModel,
+        model,
         outputSchema: mode === "doctor" ? DOCTOR_OUTPUT_SCHEMA : PHARMACY_OUTPUT_SCHEMA,
       });
       return { agent: site, sessionId: session.id, liveUrl: session.liveUrl ?? "", status: String(session.status ?? "") };

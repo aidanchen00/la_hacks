@@ -2,7 +2,7 @@
 Budget Agent — buyer side of the uAgents Payment Protocol.
 
 Flow per run:
-  1. Receive BudgetRequest from careflow orchestrator
+  1. Receive BudgetRequest from prana orchestrator
   2. Stop all active BrowserUse sessions (clean slate)
   3. Split budget equally across CVS, Walgreens, GoodRx, Amazon
   4. Send BudgetAllocation to each seller agent → they request payment
@@ -10,7 +10,7 @@ Flow per run:
   6. Handle CompletePayment → mark wallet funded
   7. Collect ShoppingResult from each seller (batched: CVS/Walgreens/GoodRx first, then Amazon)
   8. POST /budget/checkout → Stripe multi-item session
-  9. Relay checkout URL back to careflow for ASI:One delivery
+  9. Relay checkout URL back to prana for ASI:One delivery
 """
 from __future__ import annotations
 
@@ -96,7 +96,7 @@ _sessions: Dict[str, Dict[str, Any]] = {}
 # SQLite helpers
 # ---------------------------------------------------------------------------
 
-DATABASE_PATH = str(Path(__file__).resolve().parents[2] / "careflow.db")
+DATABASE_PATH = str(Path(__file__).resolve().parents[2] / "prana.db")
 
 
 def _db() -> sqlite3.Connection:
@@ -217,7 +217,7 @@ async def _post_event(run_id: str, event_type: str, payload: Dict[str, Any]) -> 
 
 
 # ---------------------------------------------------------------------------
-# Budget request handler (entry point from careflow)
+# Budget request handler (entry point from prana)
 # ---------------------------------------------------------------------------
 
 @budget_agent.on_message(BudgetRequest)
@@ -263,7 +263,7 @@ async def handle_budget_request(ctx: Context, sender: str, msg: BudgetRequest) -
             query=msg.query,
             allocated_usd=per_agent,
             total_budget_usd=total,
-            budget_agent_address=ctx.address,
+            budget_agent_address=ctx.agent.address,
         )
         await ctx.send(address, alloc)
         logger.info(f"[budget] Sent BudgetAllocation to {agent_name} (${per_agent:.2f})")
@@ -382,7 +382,7 @@ async def handle_shopping_result(ctx: Context, sender: str, msg: ShoppingResult)
             query=session["query"],
             allocated_usd=session["per_agent"],
             total_budget_usd=session["total"],
-            budget_agent_address=ctx.address,
+            budget_agent_address=ctx.agent.address,
         )
         await ctx.send(AMAZON_ADDRESS, alloc)
 
@@ -410,7 +410,7 @@ async def _finalize_run(ctx: Context, run_id: str, session: Dict[str, Any]) -> N
         _update_budget_session(run_id, status="complete")
         await _post_event(run_id, "shopping_complete", {"items": items, "checkout_url": None})
 
-    # Relay back to careflow orchestrator for ASI:One delivery
+    # Relay back to prana orchestrator for ASI:One delivery
     requester = session.get("requester_address")
     if requester:
         from agents.shared.messages import SpecialistResult

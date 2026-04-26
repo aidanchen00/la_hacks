@@ -1,5 +1,5 @@
 """
-Run CareFlow agent bureau.
+Run Prana agent bureau.
 
 Usage:
     cd /Users/aidanchen/projects/la_hacks
@@ -16,7 +16,7 @@ load_dotenv(Path(__file__).resolve().parents[1] / ".env")
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from uagents import Bureau
-from agents.careflow.agent import careflow
+from agents.prana.agent import prana
 from agents.budget.agent import budget_agent
 from agents.shopping.cvs_agent import cvs
 from agents.shopping.walgreens_agent import walgreens
@@ -31,12 +31,12 @@ logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
 )
-logger = logging.getLogger("careflow-bureau")
+logger = logging.getLogger("prana-bureau")
 
 
 def main():
-    logger.info("Starting CareFlow Agent Bureau…")
-    logger.info(f"  careflow      → {careflow.address} (port 8100)")
+    logger.info("Starting Prana Agent Bureau…")
+    logger.info(f"  prana         → {prana.address} (port 8100)")
     logger.info(f"  budget_agent  → {budget_agent.address} (port 8102)")
     logger.info(f"  cvs           → {cvs.address} (port 8103)")
     logger.info(f"  walgreens     → {walgreens.address} (port 8104)")
@@ -48,7 +48,7 @@ def main():
     logger.info(f"  solv          → {solv.address} (port 8110)")
 
     bureau = Bureau(port=8111)
-    bureau.add(careflow)
+    bureau.add(prana)
     bureau.add(budget_agent)
     bureau.add(cvs)
     bureau.add(walgreens)

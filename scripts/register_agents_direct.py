@@ -1,5 +1,5 @@
 """
-Register each CareFlow uAgent on Agentverse by calling the
+Register each Prana uAgent on Agentverse by calling the
 mailbox registration API directly (bypasses Bureau /connect routing).
 
 Usage:
@@ -25,7 +25,7 @@ from uagents_core.registration import (
     RegistrationRequest,
 )
 
-from agents.careflow.agent import careflow
+from agents.prana.agent import prana
 from agents.budget.agent import budget_agent
 from agents.shopping.cvs_agent import cvs
 from agents.shopping.walgreens_agent import walgreens
@@ -38,7 +38,7 @@ from agents.appointments.solv_agent import solv
 
 
 AGENTS = [
-    ("careflow", careflow),
+    ("prana", prana),
     ("budget", budget_agent),
     ("cvs", cvs),
     ("walgreens", walgreens),

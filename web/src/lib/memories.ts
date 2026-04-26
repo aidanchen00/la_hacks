@@ -64,7 +64,7 @@ export const SEED_MEMORIES: Memory[] = [
   },
 ];
 
-const STORAGE_KEY = "careflow.memory_library.v1";
+const STORAGE_KEY = "prana.memory_library.v1";
 
 export function loadUserMemories(): Memory[] {
   if (typeof window === "undefined") return [];

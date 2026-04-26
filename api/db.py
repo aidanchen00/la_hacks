@@ -1,4 +1,4 @@
-"""SQLite helpers for CareFlow FastAPI backend."""
+"""SQLite helpers for Prana FastAPI backend."""
 import json
 import sqlite3
 from datetime import datetime

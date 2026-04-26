@@ -47,7 +47,7 @@ logger = logging.getLogger("ranker-agent")
 
 RANKER_SEED = os.getenv("RANKER_SEED", "ranker-la-hacks-2026-seed-phrase-pqr456")
 FASTAPI_BASE = os.getenv("FASTAPI_BASE_URL", "http://localhost:8000")
-DATABASE_PATH = str(Path(__file__).resolve().parents[2] / "careflow.db")
+DATABASE_PATH = str(Path(__file__).resolve().parents[2] / "prana.db")
 
 ranker_agent = Agent(
     name="ranker",
@@ -84,7 +84,7 @@ def _llm() -> openai.AsyncOpenAI:
     return _client
 
 
-RANKER_SYSTEM = """You are the CareFlow Ranker. Multiple search agents have proposed candidate \
+RANKER_SYSTEM = """You are the Prana Ranker. Multiple search agents have proposed candidate \
 products (pharmacy) or appointments (doctor) for one patient. Score each candidate 0..1 against \
 the patient's needs and decide which ones to actually book/buy.
 

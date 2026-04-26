@@ -25,7 +25,7 @@ app.prepare().then(() => {
   (globalThis as Record<string, unknown>).__socketIO = io;
 
   server.listen(port, () => {
-    console.log(`> CareFlow ready on http://localhost:${port}`);
+    console.log(`> Prana ready on http://localhost:${port}`);
     console.log(`> Socket.IO on ws://localhost:${port}/api/socketio`);
   });
 });

@@ -1,6 +1,6 @@
-# CareFlow — Wellness Care Navigation Agent
+# Prana — Wellness Care Navigation Agent
 
-**CareFlow** is a non-diagnostic wellness education and care-navigation agent built for LA Hacks 2026.
+**Prana** is a non-diagnostic wellness education and care-navigation agent built for LA Hacks 2026.
 
 ## What This Agent Does
 

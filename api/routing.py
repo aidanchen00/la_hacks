@@ -15,7 +15,7 @@ def _get_client() -> openai.AsyncOpenAI:
     return _client
 
 
-ROUTING_SYSTEM = """You are the CareFlow Orchestrator. Analyze a wellness intake summary and return a JSON routing decision.
+ROUTING_SYSTEM = """You are the Prana Orchestrator. Analyze a wellness intake summary and return a JSON routing decision.
 
 PATHS:
 - doctor: symptoms suggest the user should see a physician (fever > 3 days, persistent pain, unexplained symptoms)
@@ -95,7 +95,7 @@ async def route_intake(transcript: str, summary: str) -> Dict[str, Any]:
             "requires_doctor_approval": False,
             "rationale": f"Fallback routing (LLM error: {str(e)[:60]})",
             "disclaimers": [
-                "CareFlow is a wellness education tool, not a medical diagnosis service.",
+                "Prana is a wellness education tool, not a medical diagnosis service.",
                 "Always consult a licensed healthcare professional for medical advice.",
             ],
         }

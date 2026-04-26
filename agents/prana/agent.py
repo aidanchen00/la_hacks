@@ -1,5 +1,5 @@
 """
-CareFlow Agentverse Agent — the ASI:One / OmegaClaw-facing entry point.
+Prana Agentverse Agent — the ASI:One / OmegaClaw-facing entry point.
 
 Responsibilities:
 - Registered on Agentverse as a discoverable wellness-navigation skill
@@ -55,14 +55,14 @@ from agents.shared.messages import (
 )
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(name)s: %(message)s")
-logger = logging.getLogger("careflow-agent")
+logger = logging.getLogger("prana-agent")
 
 # ---------------------------------------------------------------------------
 # Agent setup
 # ---------------------------------------------------------------------------
 
-CAREFLOW_SEED = os.getenv("CAREFLOW_SEED", "careflow-la-hacks-2026-seed-phrase-abc123")
-DATABASE_PATH = str(Path(__file__).resolve().parents[2] / "careflow.db")
+PRANA_SEED = os.getenv("PRANA_SEED", "prana-la-hacks-2026-seed-phrase-abc123")
+DATABASE_PATH = str(Path(__file__).resolve().parents[2] / "prana.db")
 FASTAPI_CALLBACK_URL = os.getenv("FASTAPI_CALLBACK_URL", "http://localhost:8000/internal/agent-event")
 FASTAPI_BASE_URL = os.getenv("FASTAPI_BASE_URL", "http://localhost:8000")
 APP_URL = os.getenv("APP_URL", "http://localhost:3000")
@@ -83,9 +83,9 @@ def _budget_agent_address() -> str:
 
 BUDGET_AGENT_ADDRESS = os.getenv("BUDGET_AGENT_ADDRESS", "")
 
-careflow = Agent(
-    name="careflow",
-    seed=CAREFLOW_SEED,
+prana = Agent(
+    name="prana",
+    seed=PRANA_SEED,
     port=8100,
     mailbox=True,
     publish_agent_details=True,
@@ -93,7 +93,7 @@ careflow = Agent(
     network="testnet",
 )
 
-logger.info(f"CareFlow agent address: {careflow.address}")
+logger.info(f"Prana agent address: {prana.address}")
 
 # In-memory store for ASI:One sender addresses
 _pending_chat: Dict[str, str] = {}     # run_id → sender_address (routing phase)
@@ -117,23 +117,37 @@ APPOINTMENT_AGENTS = {
 # LLM routing (same logic as api/routing.py but runs in-agent)
 # ---------------------------------------------------------------------------
 
-ROUTING_SYSTEM = """You are the CareFlow Orchestrator. You have full access to this user's intake history below.
-Use it to give a personalized, contextual routing decision — reference their specific past symptoms, trends, and prior recommendations where relevant.
+ROUTING_SYSTEM = """You are the Prana Orchestrator. If intake history is provided below, use it to personalize the response and reference specific past symptoms / prior recommendations. If no history is provided, classify the current message on its own.
 
 PATHS: doctor | pharmacy | mental_health | alt_medicine | self_care
 URGENCY: emergency | urgent | routine | wellness
 
+How to pick the path (apply in order, first match wins):
+1. emergency → user describes life-threatening symptoms (chest pain, stroke signs, severe bleeding). Set urgency=emergency.
+2. doctor → user wants to see a clinician or describes symptoms that need a clinical visit (rashes, persistent infection, suspected fracture, prescription renewal that requires a provider).
+3. pharmacy → user wants to BUY an over-the-counter (OTC) medication, supplement, or wellness product. Triggers include: "buy", "order", "where can I get", "find me", "shop for", "add to cart", explicit OTC drug names (ibuprofen, acetaminophen, Mucinex, Tylenol, Sudafed, Pepto, Claritin, melatonin), or naming a pharmacy ("CVS", "Walgreens", "GoodRx"). Pick this path even when symptoms are mild — purchase intent overrides wellness/self-care.
+4. mental_health → anxiety, depression, stress, sleep issues, mood — intent is emotional support / journaling / mental wellness.
+5. alt_medicine → herbal remedies, supplements without purchase intent, traditional medicine questions.
+6. self_care → general lifestyle / wellness questions with no purchase intent and no clinical need (hydration, exercise, diet tips).
+
 Rules:
-- emergency → call 911 disclaimer required
-- requires_doctor_approval = true when pharmacy path and Rx medications may be involved
-- Never diagnose; use "may indicate", "consider consulting"
-- If the user asks about a past intake or says "last time" / "continue" / "what did you say", reference their history directly
+- emergency → include a "Call 911 immediately" disclaimer.
+- requires_doctor_approval = true ONLY when pharmacy path and the medication is Rx (e.g. antibiotics, controlled substances). False for OTC.
+- Never diagnose; use "may indicate", "consider consulting".
+- If the user references "last time" / "continue" / "what did you say", reference their history.
 
 For doctor path, also pick:
 - specialty: the medical specialty most relevant ("primary care", "urgent care", "dermatology", "cardiology", "psychiatry", etc.). Default to "primary care" if unclear.
 - location: extract a US city/area from the message/history if mentioned, otherwise "Los Angeles, CA".
 For pharmacy path, also pick:
-- query: 3-6 word OTC search phrase ("cold and flu relief", "ibuprofen 200mg").
+- query: 3-6 word OTC search phrase ("cold and flu relief", "ibuprofen 200mg", "melatonin sleep aid").
+
+Examples:
+- "Buy me ibuprofen from CVS" → pharmacy, query="ibuprofen", requires_doctor_approval=false.
+- "I have a headache, what can I take?" → pharmacy, query="OTC pain relief".
+- "I think I broke my wrist" → doctor, specialty="urgent care", urgency=urgent.
+- "How much water should I drink daily?" → self_care.
+- "I've been anxious all week" → mental_health.
 
 Return ONLY valid JSON:
 {
@@ -145,7 +159,7 @@ Return ONLY valid JSON:
   "payment_amount_usd": 0.0,
   "requires_doctor_approval": false,
   "rationale": "...",
-  "disclaimers": ["CareFlow is a wellness education tool..."],
+  "disclaimers": ["Prana is a wellness education tool..."],
   "specialty": "primary care",
   "location": "Los Angeles, CA",
   "query": "cold and flu relief"
@@ -198,12 +212,12 @@ async def route_text(text: str, context: str = "") -> Dict[str, Any]:
             "urgency": "wellness",
             "recommended_path": "self_care",
             "summary": "Wellness intake recorded. Please review your dashboard.",
-            "next_actions": ["Open your CareFlow dashboard", "Consult a healthcare professional if needed"],
+            "next_actions": ["Open your Prana dashboard", "Consult a healthcare professional if needed"],
             "payment_required": False,
             "payment_amount_usd": 0.0,
             "requires_doctor_approval": False,
             "rationale": f"LLM error fallback: {str(e)[:60]}",
-            "disclaimers": ["CareFlow is a wellness education tool, not a medical diagnosis service."],
+            "disclaimers": ["Prana is a wellness education tool, not a medical diagnosis service."],
         }
 
 
@@ -414,7 +428,7 @@ async def _post_event(run_id: str, event_type: str, payload: Dict[str, Any]) -> 
         async with httpx.AsyncClient(timeout=5.0) as client:
             await client.post(FASTAPI_CALLBACK_URL, json={
                 "run_id": run_id,
-                "agent_name": "careflow",
+                "agent_name": "prana",
                 "event_type": event_type,
                 "payload": payload,
             })
@@ -435,14 +449,14 @@ async def _trigger_budget(ctx: Context, run_id: str, instruction: str,
         run_id=run_id,
         query=query,
         total_budget_usd=DEFAULT_SHOPPING_BUDGET_USD,
-        requester_address=careflow.address,
+        requester_address=prana.address,
     )
     try:
         await ctx.send(budget_addr, budget_req)
-        logger.info(f"[careflow] BudgetRequest sent to budget agent for run {run_id[:8]} "
+        logger.info(f"[prana] BudgetRequest sent to budget agent for run {run_id[:8]} "
                     f"(${DEFAULT_SHOPPING_BUDGET_USD:.2f})")
     except Exception as e:
-        logger.error(f"[careflow] Failed to send BudgetRequest: {e}")
+        logger.error(f"[prana] Failed to send BudgetRequest: {e}")
 
 
 async def _trigger_doctor_payment(run_id: str, urgency: str) -> tuple[Optional[str], str, float]:
@@ -478,7 +492,7 @@ async def _trigger_doctor_search(ctx: Context, run_id: str, decision: Dict[str, 
     for name, addr in APPOINTMENT_AGENTS.items():
         req = AppointmentSearchRequest(
             run_id=run_id, query=specialty, location=location,
-            requester_address=careflow.address,
+            requester_address=prana.address,
         )
         try:
             await ctx.send(addr, req)
@@ -625,14 +639,14 @@ async def _finalize_doctor_run(ctx: Context, run_id: str) -> None:
     ))
 
 
-@careflow.on_interval(period=3.0)
+@prana.on_interval(period=3.0)
 async def poll_pending_runs(ctx: Context) -> None:
     run = _get_pending_run()
     if not run:
         return
 
     run_id, instruction = run["id"], run.get("instruction", "")
-    logger.info(f"[careflow] Picked up pending run {run_id[:8]}")
+    logger.info(f"[prana] Picked up pending run {run_id[:8]}")
 
     # Mark in_progress immediately to avoid re-picking
     conn = _db()
@@ -644,7 +658,7 @@ async def poll_pending_runs(ctx: Context) -> None:
     decision["run_id"] = run_id
     _save_routing(run_id, decision)
     await _post_event(run_id, "routing_complete", decision)
-    logger.info(f"[careflow] run {run_id[:8]} → {decision.get('recommended_path')} ({decision.get('urgency')})")
+    logger.info(f"[prana] run {run_id[:8]} → {decision.get('recommended_path')} ({decision.get('urgency')})")
 
     if decision.get("recommended_path") == "pharmacy":
         await _trigger_budget(ctx, run_id, instruction, decision)
@@ -706,7 +720,7 @@ async def handle_chat(ctx: Context, sender: str, msg: ChatMessage) -> None:
         await ctx.send(sender, ChatMessage(
             timestamp=datetime.utcnow(), msg_id=uuid4(),
             content=[
-                TextContent(type="text", text=f"Sorry, CareFlow encountered an error while processing your intake: {e}\n\nPlease try again."),
+                TextContent(type="text", text=f"Sorry, Prana encountered an error while processing your intake: {e}\n\nPlease try again."),
                 EndSessionContent(type="end-session"),
             ],
         ))
@@ -752,7 +766,7 @@ async def handle_chat(ctx: Context, sender: str, msg: ChatMessage) -> None:
         )
 
     result_text = (
-        f"🏥 CareFlow Routing Decision (run: {run_id[:8]})\n"
+        f"🏥 Prana Routing Decision (run: {run_id[:8]})\n"
         f"{history_note}\n"
         f"Urgency: {decision.get('urgency', 'wellness').upper()}\n"
         f"Recommended Path: {recommended_path.replace('_', ' ').title()}\n\n"
@@ -782,10 +796,10 @@ async def handle_ack(_ctx: Context, _sender: str, _msg: ChatAcknowledgement) -> 
     pass
 
 
-careflow.include(chat_proto, publish_manifest=True)
+prana.include(chat_proto, publish_manifest=True)
 
 
-@careflow.on_message(AppointmentResult)
+@prana.on_message(AppointmentResult)
 async def handle_appointment_result(ctx: Context, sender: str, msg: AppointmentResult) -> None:
     """Collect ZocDoc/Healthgrades/Solv results; finalize once all 3 returned."""
     state = _doctor_state.get(msg.run_id)
@@ -804,7 +818,7 @@ async def handle_appointment_result(ctx: Context, sender: str, msg: AppointmentR
         await _finalize_doctor_run(ctx, msg.run_id)
 
 
-@careflow.on_message(SpecialistResult)
+@prana.on_message(SpecialistResult)
 async def handle_specialist_result(ctx: Context, sender: str, msg: SpecialistResult) -> None:
     """Receive shopping results from budget agent and relay to ASI:One."""
     run_id = msg.run_id
@@ -812,7 +826,7 @@ async def handle_specialist_result(ctx: Context, sender: str, msg: SpecialistRes
     items = msg.artifacts.get("items", [])
 
     await _post_event(run_id, "shopping_complete", msg.artifacts)
-    logger.info(f"[careflow] Shopping complete for run {run_id[:8]}: "
+    logger.info(f"[prana] Shopping complete for run {run_id[:8]}: "
                 f"{len(items)} items, checkout={'yes' if checkout_url else 'no'}")
 
     pending_sender = _pharmacy_chat.pop(run_id, None)
@@ -874,7 +888,7 @@ async def on_commit_payment(ctx: Context, sender: str, msg: CommitPayment) -> No
 
     await ctx.send(sender, ChatMessage(
         timestamp=datetime.utcnow(), msg_id=uuid4(),
-        content=[TextContent(type="text", text="Payment confirmed! You can now access full CareFlow navigation services.")],
+        content=[TextContent(type="text", text="Payment confirmed! You can now access full Prana navigation services.")],
     ))
 
 
@@ -890,4 +904,4 @@ async def on_reject_payment(ctx: Context, sender: str, msg: RejectPayment) -> No
     ))
 
 
-careflow.include(payment_proto, publish_manifest=True)
+prana.include(payment_proto, publish_manifest=True)

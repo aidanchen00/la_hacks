@@ -1,10 +1,10 @@
-# CareFlow Budget Agent
+# Prana Budget Agent
 
-Coordinates pharmacy product shopping across multiple platforms on behalf of the CareFlow wellness system.
+Coordinates pharmacy product shopping across multiple platforms on behalf of the Prana wellness system.
 
 ## What This Agent Does
 
-Receives a `BudgetRequest` from the CareFlow orchestrator and splits the total budget equally across four seller agents (CVS, Walgreens, GoodRx, Amazon). Manages the Payment Protocol handshake with each seller, collects results, and creates a Stripe multi-item checkout session.
+Receives a `BudgetRequest` from the Prana orchestrator and splits the total budget equally across four seller agents (CVS, Walgreens, GoodRx, Amazon). Manages the Payment Protocol handshake with each seller, collects results, and creates a Stripe multi-item checkout session.
 
 ## Flow
 
@@ -16,4 +16,4 @@ Receives a `BudgetRequest` from the CareFlow orchestrator and splits the total b
 
 ## Part of
 
-CareFlow multi-agent wellness navigation system — LA Hacks 2026.
+Prana multi-agent wellness navigation system — LA Hacks 2026.

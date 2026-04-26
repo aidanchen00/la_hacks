@@ -1,5 +1,5 @@
 """
-CareFlow FastAPI control plane.
+Prana FastAPI control plane.
 
 Endpoints:
   POST /intake                — submit a voice intake → run_id
@@ -30,9 +30,16 @@ BROWSER_USE_API_KEY = os.getenv("BROWSER_USE_API_KEY", "")
 BROWSER_USE_BASE    = "https://api.browser-use.com/api/v3"
 # v3 BuModel enum: bu-mini | bu-max | bu-ultra | gemini-3-flash |
 # claude-sonnet-4.6 | claude-opus-4.6 | gpt-5.4-mini.
-# gpt-5.4-mini routes to the user's BYOK OpenAI key on BrowserUse so LLM cost
-# bills against OpenAI directly instead of consuming task credits.
-BROWSER_USE_MODEL   = os.getenv("BROWSER_USE_MODEL", "gpt-5.4-mini")
+# Default model (doctor + general): BYOK OpenAI for cost.
+BROWSER_USE_MODEL          = os.getenv("BROWSER_USE_MODEL", "gpt-5.4-mini")
+# Pharmacy override: shopping agents hit CVS/Walgreens/GoodRx/Amazon, which
+# have heavier anti-bot. bu-max is BrowserUse's browser-tuned model — bills BU
+# credits but actually gets through retailer challenges.
+BROWSER_USE_PHARMACY_MODEL = os.getenv("BROWSER_USE_PHARMACY_MODEL", "bu-max")
+
+# Shopping seller agents that hit pharmacy retailers — these get the
+# BROWSER_USE_PHARMACY_MODEL override automatically.
+_PHARMACY_SHOPPING_AGENTS = {"cvs", "walgreens", "goodrx", "amazon"}
 
 # v3 lifecycle: created → idle → running → (stopped | timed_out | error).
 # `idle` after a task ran means the task completed and the session is parked,
@@ -61,20 +68,20 @@ from api.db import (
 from api.routing import route_intake
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(name)s: %(message)s")
-logger = logging.getLogger("careflow-api")
+logger = logging.getLogger("prana-api")
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    logger.info("CareFlow API starting up…")
+    logger.info("Prana API starting up…")
     init_db()
     stripe.api_key = STRIPE_SECRET_KEY
     logger.info("Database initialized")
     yield
-    logger.info("CareFlow API shutting down")
+    logger.info("Prana API shutting down")
 
 
-app = FastAPI(title="CareFlow API", version="0.1.0", lifespan=lifespan)
+app = FastAPI(title="Prana API", version="0.1.0", lifespan=lifespan)
 
 app.add_middleware(
     CORSMiddleware,
@@ -90,7 +97,7 @@ app.add_middleware(
 
 @app.get("/health")
 async def health():
-    return {"ok": True, "service": "CareFlow API"}
+    return {"ok": True, "service": "Prana API"}
 
 
 # ---------------------------------------------------------------------------
@@ -201,7 +208,7 @@ async def create_checkout(request: Request):
     body = await request.json()
     run_id = body.get("run_id", "")
     amount_usd = float(body.get("amount", 5.0))
-    item_name = body.get("item_name", "CareFlow Care Navigation")
+    item_name = body.get("item_name", "Prana Care Navigation")
 
     session = stripe.checkout.Session.create(
         mode="payment",
@@ -209,7 +216,7 @@ async def create_checkout(request: Request):
         line_items=[{
             "price_data": {
                 "currency": "usd",
-                "product_data": {"name": item_name, "description": "CareFlow wellness care navigation service"},
+                "product_data": {"name": item_name, "description": "Prana wellness care navigation service"},
                 "unit_amount": int(amount_usd * 100),
             },
             "quantity": 1,
@@ -356,10 +363,15 @@ async def budget_browser_start(request: Request):
     task      = body["task"]
 
     async with httpx.AsyncClient(timeout=20.0) as client:
+        model = (
+            BROWSER_USE_PHARMACY_MODEL
+            if agent_name.lower() in _PHARMACY_SHOPPING_AGENTS
+            else BROWSER_USE_MODEL
+        )
         resp = await client.post(
             f"{BROWSER_USE_BASE}/sessions",
             headers={"X-Browser-Use-API-Key": BROWSER_USE_API_KEY},
-            json={"task": task, "model": BROWSER_USE_MODEL},
+            json={"task": task, "model": model},
         )
         if resp.status_code not in (200, 201):
             raise HTTPException(status_code=resp.status_code,
@@ -558,7 +570,7 @@ async def doctor_checkout(request: Request):
                 "product_data": {
                     "name": f"Appointment booking — {item.get('name', 'Provider')}",
                     "description": (item.get("description")
-                                    or f"Booked via {item.get('source_agent', 'CareFlow')}")[:200],
+                                    or f"Booked via {item.get('source_agent', 'Prana')}")[:200],
                 },
                 "unit_amount": max(100, int(float(item.get("price", 150)) * 100)),
             },
@@ -605,7 +617,7 @@ async def list_runs():
 
 @app.get("/")
 async def root():
-    return {"name": "CareFlow API", "version": "0.1.0", "docs": "/docs"}
+    return {"name": "Prana API", "version": "0.1.0", "docs": "/docs"}
 
 
 if __name__ == "__main__":

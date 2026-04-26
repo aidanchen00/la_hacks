@@ -1,5 +1,5 @@
 """
-Register all CareFlow uAgents on Agentverse.
+Register all Prana uAgents on Agentverse.
 
 Polls each agent's local inspector until it's up, then POSTs to /connect
 with the AGENTVERSE_API_KEY so agent details (name, README, protocols)
@@ -25,7 +25,7 @@ from dotenv import load_dotenv
 load_dotenv(Path(__file__).resolve().parents[1] / ".env")
 
 AGENTS = [
-    {"name": "careflow",     "port": 8100},
+    {"name": "prana",     "port": 8100},
     {"name": "budget",       "port": 8102},
     {"name": "cvs",          "port": 8103},
     {"name": "walgreens",    "port": 8104},

@@ -1,12 +1,12 @@
 """
-Seed careflow.db with realistic knowledge graph data for common illnesses.
+Seed prana.db with realistic knowledge graph data for common illnesses.
 Run: python scripts/seed_kg.py
 """
 import json
 import sqlite3
 from pathlib import Path
 
-DB_PATH = Path(__file__).resolve().parents[1] / "careflow.db"
+DB_PATH = Path(__file__).resolve().parents[1] / "prana.db"
 
 CONDITIONS = [
     ("Influenza (Flu)", ["Fever", "Body Aches", "Fatigue", "Chills", "Headache", "Dry Cough", "Sore Throat"]),
@@ -94,7 +94,7 @@ def seed():
     conn.execute("PRAGMA journal_mode=WAL")
 
     # Insert users
-    conn.execute("INSERT OR IGNORE INTO users (id, email, name) VALUES (1, 'demo@careflow.ai', 'Demo User')")
+    conn.execute("INSERT OR IGNORE INTO users (id, email, name) VALUES (1, 'demo@prana.ai', 'Demo User')")
 
     # Insert sessions
     session_ids = []
@@ -179,7 +179,7 @@ def seed():
                VALUES (?, ?, ?, ?, ?, 0, 0, 0, ?, ?)""",
             (run_id, urgency, path, summary, json.dumps(next_actions),
              f"Routed based on reported symptoms and urgency assessment.",
-             json.dumps(["CareFlow is a wellness education tool, not a substitute for licensed medical care."])),
+             json.dumps(["Prana is a wellness education tool, not a substitute for licensed medical care."])),
         )
     print(f"Inserted {len(RUNS)} runs with routing decisions")
 

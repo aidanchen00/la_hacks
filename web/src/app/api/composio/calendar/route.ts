@@ -18,7 +18,7 @@ interface CalendarBookingPayload {
   listingUrl?: string;
   /** Out-of-pocket dollar amount paid via Stripe */
   amountPaid?: number;
-  /** CareFlow run id for audit trail */
+  /** Prana run id for audit trail */
   runId?: string;
   /** ISO 8601 start time. Defaults to next available 10am tomorrow. */
   startIso?: string;

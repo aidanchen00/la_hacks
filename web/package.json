@@ -1,8 +1,8 @@
 {
-  "name": "careflow",
+  "name": "prana",
   "version": "0.1.0",
   "private": true,
-  "description": "CareFlow — voice-first healthcare/wellness care-navigation app (LA Hacks 2026)",
+  "description": "Prana — voice-first healthcare/wellness care-navigation app (LA Hacks 2026)",
   "scripts": {
     "dev": "concurrently --names \"next,agent\" --prefix-colors \"green,blue\" \"tsx server.ts\" \"cd livekit && npm install --silent && tsx agent.ts dev\"",
     "build": "next build",

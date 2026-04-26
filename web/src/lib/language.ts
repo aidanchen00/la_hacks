@@ -3,8 +3,8 @@ export type Lang = "en" | "es" | "zh";
 export const LANG_LABELS: Record<Lang, string> = { en: "EN", es: "ES", zh: "中文" };
 export const LANG_NAMES: Record<Lang, string> = { en: "English", es: "Español", zh: "中文" };
 
-const STORAGE_KEY = "careflow.lang";
-const EVENT_NAME = "careflow:lang-changed";
+const STORAGE_KEY = "prana.lang";
+const EVENT_NAME = "prana:lang-changed";
 
 export function getLang(): Lang {
   if (typeof window === "undefined") return "en";

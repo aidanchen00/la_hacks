@@ -2,10 +2,10 @@
 Appointment-search agent factory.
 
 Each appointment agent (ZocDoc / Healthgrades / Solv):
-  1. Receives `AppointmentSearchRequest` from careflow
+  1. Receives `AppointmentSearchRequest` from prana
   2. Launches a BrowserUse session via FastAPI (`/budget/browser/start`)
   3. Polls until terminal, parses the structured JSON output
-  4. Replies with `AppointmentResult` to the careflow address that invoked it
+  4. Replies with `AppointmentResult` to the prana address that invoked it
 
 This is a separate factory from `make_seller_agent` (pharmacy) on purpose:
 appointments don't need the buyer/seller payment dance — the user pays Stripe
@@ -175,7 +175,7 @@ def make_appointment_agent(
             run_id=msg.run_id, query=msg.query, location=msg.location,
             agent_logger=agent_logger,
         )
-        # Reply to whoever asked (careflow uses requester_address; fall back to sender)
+        # Reply to whoever asked (prana uses requester_address; fall back to sender)
         target = msg.requester_address or sender
         await ctx.send(target, result)
         agent_logger.info(f"[{name}] AppointmentResult sent → {target[:20]} "

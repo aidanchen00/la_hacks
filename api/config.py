@@ -1,11 +1,11 @@
-"""CareFlow FastAPI configuration."""
+"""Prana FastAPI configuration."""
 import os
 from pathlib import Path
 
 # Repo root is one level above api/
 REPO_ROOT = Path(__file__).resolve().parent.parent
 
-DATABASE_PATH = str(REPO_ROOT / "careflow.db")
+DATABASE_PATH = str(REPO_ROOT / "prana.db")
 
 FASTAPI_CALLBACK_URL = os.getenv("FASTAPI_CALLBACK_URL", "http://localhost:8000/internal/agent-event")
 FASTAPI_BASE_URL = os.getenv("FASTAPI_BASE_URL", "http://localhost:8000")
