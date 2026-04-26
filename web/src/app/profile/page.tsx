@@ -15,23 +15,23 @@ import WorldIDGate from "@/components/WorldIDGate";
 const SEX_OPTIONS = ["female", "male", "intersex", "prefer_not_to_say"] as const;
 
 // Default form values used when no profile exists yet. Pre-filled with a
-// realistic California demo persona (median Silver-tier PPO; mid-20s; mild
-// seasonal allergies) so the dashboard cost panel + intake routing have
-// something believable to work with out of the box. Users can edit any field.
+// realistic California demo persona (19yo male college student with a
+// generic Bronze plan and seasonal allergies) so the dashboard cost panel +
+// intake routing have something believable out of the box. Users can edit.
 const EMPTY_FORM = {
-  display_name: "",
-  age: "28",
-  sex: "female",
+  display_name: "Aidan",
+  age: "19",
+  sex: "male",
   gender: "",
-  weight_lbs: "140",
-  height_in: "65",                          // 5'5"
-  allergies: "Penicillin, seasonal pollen",
-  conditions: "Mild asthma",
-  medications: "Albuterol inhaler (as needed)",
-  insurance_provider: "Blue Shield of California — Silver PPO",
-  insurance_member_id: "BSC123456789",
-  insurance_group_id: "GRP-9876543",
-  deductible_total_usd: "1500",             // typical CA Silver-tier individual deductible
+  weight_lbs: "185",
+  height_in: "71",                          // 5'11"
+  allergies: "Seasonal pollen",
+  conditions: "ADHD",
+  medications: "Vyvanse 30mg (daily)",
+  insurance_provider: "Generic Bronze Marketplace Plan",
+  insurance_member_id: "MBR000000000",
+  insurance_group_id: "GRP-000000",
+  deductible_total_usd: "2000",             // mid-range young-adult Bronze/Silver
   plan_year_start: "2026-01-01",
 };
 type FormState = typeof EMPTY_FORM;

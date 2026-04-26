@@ -263,7 +263,16 @@ VIDEO_PROMPT = (
     "posture issues), the patient's apparent age and demographics, "
     "environmental context (home, hospital, outdoors), and any actions being "
     "performed (touching an area in pain, demonstrating a symptom). If nothing "
-    "medically relevant is visible, say so. Keep response under 200 words."
+    "medically relevant is visible, say so. Keep description under 180 words.\n\n"
+    "Then on a NEW LINE, output exactly this format with your best inference:\n"
+    "Predicted body temperature: <X.X>°F (±1°F)\n\n"
+    "Estimate the temperature from any visual cues you can detect — flushed or "
+    "pale skin, visible sweating, shivering, glassy eyes, lethargic posture, "
+    "or signs of being bundled up vs. comfortable. If the patient looks "
+    "asymptomatic or no thermal cues are visible, predict 98.6°F (±1°F). "
+    "Always output a single numeric estimate in this exact format — do NOT "
+    "skip this line. This is a *visual inference*, not a medical reading; "
+    "the ±1°F band is mandatory."
 )
 
 
@@ -815,6 +824,65 @@ async def list_runs():
     """).fetchall()
     conn.close()
     return [dict(row) for row in rows]
+
+
+@app.get("/history/{domain}")
+async def get_history(domain: str, limit: int = 3):
+    """
+    Return the user's most recent booked ranker selections for a given domain
+    ('pharmacy' | 'doctor'), grouped by run. One row per checkout (Stripe
+    session). Used by the pharmacy + doctor pages to render a "recent orders /
+    appointments" history block.
+    """
+    if domain not in ("pharmacy", "doctor"):
+        raise HTTPException(status_code=400, detail="domain must be 'pharmacy' or 'doctor'")
+    limit = max(1, min(int(limit or 3), 20))
+    from api.db import get_conn
+    conn = get_conn()
+    # Group runs by their Stripe checkout session so multiple selections from
+    # one purchase show up as a single history entry.
+    groups = conn.execute(
+        """
+        SELECT run_id, stripe_session_id, MAX(created_at) AS created_at, SUM(price) AS total
+        FROM ranker_selections
+        WHERE domain = ? AND selected = 1 AND booked = 1 AND stripe_session_id IS NOT NULL
+        GROUP BY run_id, stripe_session_id
+        ORDER BY created_at DESC
+        LIMIT ?
+        """,
+        (domain, limit),
+    ).fetchall()
+    out = []
+    for g in groups:
+        items = conn.execute(
+            """
+            SELECT id, source_agent, name, price, url, description, metadata, created_at
+            FROM ranker_selections
+            WHERE run_id = ? AND domain = ? AND stripe_session_id = ? AND selected = 1
+            ORDER BY id ASC
+            """,
+            (g["run_id"], domain, g["stripe_session_id"]),
+        ).fetchall()
+        out.append({
+            "run_id": g["run_id"],
+            "stripe_session_id": g["stripe_session_id"],
+            "created_at": g["created_at"],
+            "total": float(g["total"] or 0.0),
+            "items": [
+                {
+                    "id": it["id"],
+                    "source_agent": it["source_agent"],
+                    "name": it["name"],
+                    "price": float(it["price"] or 0.0),
+                    "url": it["url"],
+                    "description": it["description"],
+                    "metadata": json.loads(it["metadata"] or "{}"),
+                }
+                for it in items
+            ],
+        })
+    conn.close()
+    return out
 
 
 @app.get("/")

@@ -6,8 +6,8 @@ import { motion } from "motion/react";
 import LanguagePicker from "@/app/components/LanguagePicker";
 import { useTranslate } from "@/lib/translate";
 import {
-  getRun, runRanker, getRanker, createDoctorCheckout,
-  type RankerSelectionItem,
+  getRun, runRanker, getRanker, createDoctorCheckout, getHistory,
+  type RankerSelectionItem, type HistoryEntry,
 } from "@/lib/api";
 
 interface ProviderResult {
@@ -527,6 +527,16 @@ export default function DoctorPage() {
 
   const rankerSelected = rankerItems.filter((i) => i.selected);
   const rankerSelectedTotal = rankerSelected.reduce((s, i) => s + i.price, 0);
+
+  // Recent doctor appointments — last 3 paid bookings across all runs.
+  const [history, setHistory] = useState<HistoryEntry[]>([]);
+  const loadHistory = useCallback(() => {
+    getHistory("doctor", 3).then(setHistory).catch(() => {});
+  }, []);
+  useEffect(() => { loadHistory(); }, [loadHistory]);
+  useEffect(() => {
+    if (paymentStatus === "success") loadHistory();
+  }, [paymentStatus, loadHistory]);
 
   // One-shot: when Stripe redirects back with payment=success and we have a
   // booked pick, log it to Google Calendar via Composio. Guarded by a
@@ -1114,6 +1124,53 @@ export default function DoctorPage() {
                 </div>
               </motion.div>
             )}
+          </motion.div>
+        )}
+
+        {/* Recent appointments — last 3 paid doctor bookings across all runs. */}
+        {history.length > 0 && (
+          <motion.div
+            initial={{ opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
+            className="bg-[#EFEAE0] rounded-2xl p-6 border border-[#1F3A2E]/15 mt-6"
+          >
+            <div className="flex items-center mb-4">
+              <h3 className="font-serif text-[#1F3A2E] text-xl font-medium">Recent appointments</h3>
+              <span className="ml-auto text-xs text-[#6B7280]">{history.length} most recent</span>
+            </div>
+            <div className="space-y-3">
+              {history.map((h) => (
+                <div key={h.stripe_session_id} className="bg-white border border-[#1F3A2E]/10 rounded-xl px-4 py-3">
+                  <div className="flex items-baseline justify-between mb-2">
+                    <div className="text-xs text-[#6B7280]">
+                      {new Date(h.created_at + "Z").toLocaleString(undefined, {
+                        month: "short", day: "numeric", hour: "numeric", minute: "2-digit",
+                      })}
+                    </div>
+                    <div className="font-semibold text-[#1F3A2E]">${h.total.toFixed(2)}</div>
+                  </div>
+                  <div className="space-y-1">
+                    {h.items.map((it) => {
+                      const meta = (it.metadata ?? {}) as Record<string, unknown>;
+                      const time = typeof meta.time === "string" ? meta.time : null;
+                      return (
+                        <div key={it.id} className="text-sm">
+                          <div className="flex justify-between gap-2">
+                            <span className="truncate text-[#3D3D3D]">
+                              <strong>{it.source_agent}</strong> · {it.name}
+                            </span>
+                            <span className="text-[#3D3D3D] flex-shrink-0">${it.price.toFixed(2)}</span>
+                          </div>
+                          {time && (
+                            <div className="text-xs text-[#6B7280] mt-0.5">📅 {time}</div>
+                          )}
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              ))}
+            </div>
           </motion.div>
         )}
       </div>

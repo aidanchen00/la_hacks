@@ -76,7 +76,12 @@ Return ONLY valid JSON matching this schema:
   "conditions": ["specific medical condition, e.g. strep throat, hypertension"]
 }
 
-conditions: array of specific medical conditions or clinical terms implied in the summary. Use concise searchable names. Empty array if none."""
+conditions: REQUIRED array. Extract every symptom or clinical term mentioned (or strongly implied) in the summary and add it as a concise searchable phrase. Examples:
+- "headache for 3 days, 6/10" → ["headache"]
+- "low-grade fever and cough" → ["fever", "cough", "common cold"]
+- "sore throat with fever" → ["sore throat", "strep throat", "fever"]
+- "rash on forearm, itchy" → ["contact dermatitis", "rash"]
+Only return [] if the user described nothing medical (e.g. "I'm fine, just curious"). Otherwise ALWAYS populate at least one entry — these power the citation links the user sees on their dashboard."""
 
 
 def _profile_context(profile: Optional[Dict[str, Any]]) -> str:

@@ -3,8 +3,8 @@
 import { useEffect, useMemo, useState, useRef, useCallback } from "react";
 import { useParams, useSearchParams } from "next/navigation";
 import {
-  getRun, getBudget, createBudgetCheckout, runRanker, getRanker,
-  type CartItem, type RankerSelectionItem,
+  getRun, getBudget, createBudgetCheckout, runRanker, getRanker, getHistory,
+  type CartItem, type RankerSelectionItem, type HistoryEntry,
 } from "@/lib/api";
 import { motion } from "motion/react";
 import LanguagePicker from "@/app/components/LanguagePicker";
@@ -42,6 +42,7 @@ export default function PharmacyPage() {
   const [rankerRationale, setRankerRationale] = useState("");
   const [rankerLoading, setRankerLoading] = useState(false);
   const rankerFiredRef = useRef(false);
+  const [history, setHistory] = useState<HistoryEntry[]>([]);
 
   const browserPollRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const cartPollRef = useRef<ReturnType<typeof setInterval> | null>(null);
@@ -93,6 +94,16 @@ export default function PharmacyPage() {
     cartPollRef.current = setInterval(refreshCart, 4000);
     return () => { if (cartPollRef.current) clearInterval(cartPollRef.current); };
   }, [refreshCart]);
+
+  // Recent pharmacy purchases — refresh on mount and after a successful
+  // checkout so a freshly booked order shows up without a hard reload.
+  const loadHistory = useCallback(() => {
+    getHistory("pharmacy", 3).then(setHistory).catch(() => {});
+  }, []);
+  useEffect(() => { loadHistory(); }, [loadHistory]);
+  useEffect(() => {
+    if (paymentStatus === "success") loadHistory();
+  }, [paymentStatus, loadHistory]);
 
   const startSearch = async () => {
     setLoading(true);
@@ -709,6 +720,44 @@ export default function PharmacyPage() {
           <div className="bg-[#EFEAE0] border border-dashed border-[#1F3A2E]/15 rounded-2xl px-5 py-6 text-center text-sm text-[#6B7280]">
             {T.cartEmpty}
           </div>
+        )}
+
+        {/* Recent orders — last 3 paid pharmacy checkouts across all runs. */}
+        {history.length > 0 && (
+          <motion.div
+            initial={{ opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
+            className="bg-[#EFEAE0] rounded-2xl p-6 border border-[#1F3A2E]/15 mt-5"
+          >
+            <div className="flex items-center mb-4">
+              <h3 className="font-serif text-[#1F3A2E] text-xl font-medium">Recent orders</h3>
+              <span className="ml-auto text-xs text-[#6B7280]">{history.length} most recent</span>
+            </div>
+            <div className="space-y-3">
+              {history.map((h) => (
+                <div key={h.stripe_session_id} className="bg-white border border-[#1F3A2E]/10 rounded-xl px-4 py-3">
+                  <div className="flex items-baseline justify-between mb-2">
+                    <div className="text-xs text-[#6B7280]">
+                      {new Date(h.created_at + "Z").toLocaleString(undefined, {
+                        month: "short", day: "numeric", hour: "numeric", minute: "2-digit",
+                      })}
+                    </div>
+                    <div className="font-semibold text-[#1F3A2E]">${h.total.toFixed(2)}</div>
+                  </div>
+                  <div className="space-y-1">
+                    {h.items.map((it) => (
+                      <div key={it.id} className="flex justify-between gap-2 text-sm">
+                        <span className="truncate text-[#3D3D3D]">
+                          <strong>{it.source_agent}</strong> · {it.name}
+                        </span>
+                        <span className="text-[#3D3D3D] flex-shrink-0">${it.price.toFixed(2)}</span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              ))}
+            </div>
+          </motion.div>
         )}
       </div>
     </div>

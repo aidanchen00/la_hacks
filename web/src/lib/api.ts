@@ -234,6 +234,33 @@ export function createDoctorCheckout(runId: string, items: DoctorCheckoutItem[])
 }
 
 // ---------------------------------------------------------------------------
+// History (recent paid orders / appointments) — keyed on Stripe session so
+// each row is one checkout. Backed by GET /history/{domain}.
+// ---------------------------------------------------------------------------
+
+export interface HistoryItem {
+  id: number;
+  source_agent: string;
+  name: string;
+  price: number;
+  url: string | null;
+  description: string | null;
+  metadata: Record<string, unknown>;
+}
+
+export interface HistoryEntry {
+  run_id: string;
+  stripe_session_id: string;
+  created_at: string;
+  total: number;
+  items: HistoryItem[];
+}
+
+export function getHistory(domain: "pharmacy" | "doctor", limit: number = 3): Promise<HistoryEntry[]> {
+  return request(`/history/${domain}?limit=${limit}`);
+}
+
+// ---------------------------------------------------------------------------
 // Profile (anonymous, keyed on World ID nullifier hash)
 // ---------------------------------------------------------------------------
 

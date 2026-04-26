@@ -216,6 +216,8 @@ function DashboardContent() {
       "Self-Care Resources",                                                          // 30
       "Education and wellness lifestyle recommendations",                             // 31
       "Intake session",                                                               // 32
+      "What's visible in your video",                                                 // 33
+      "Video analysis in progress…",                                                  // 34
     ],
     [],
   );
@@ -228,6 +230,7 @@ function DashboardContent() {
     viewHistory: t[16], recommended: t[17], pending: t[18], emergencyHeader: t[19],
     emergencyMsg: t[20], call911: t[21],
     intakeSessionFallback: t[32],
+    whatVisibleInVideo: t[33], videoAnalysisPending: t[34],
   };
   const PATH_T: Record<keyof typeof PATH_CONFIG, { label: string; desc: string }> = {
     doctor: { label: t[22], desc: t[23] },
@@ -522,11 +525,36 @@ function DashboardContent() {
                 </div>
               )}
 
-              {/* Summary details */}
-              {run?.intake_summary && !rd && (
-                <div className="bg-[#EFEAE0] rounded-2xl p-5 border-l-4 border-[#1F3A2E]">
-                  <p className="text-[#1F3A2E] font-medium mb-1">{T.whatYouShared}</p>
-                  <p className="text-[#3D3D3D] text-base leading-relaxed">{tIntakeSummary ?? run.intake_summary}</p>
+              {/* Patient input pair: what they said + what the AI saw in the
+                  video. Shown together so a viewer can compare verbal report
+                  with visual context at a glance. "What you shared" used to
+                  hide once the routing decision landed; now it stays so it
+                  pairs cleanly with the video block below. */}
+              {(run?.intake_summary || run?.video_analysis || isVideoPending(run)) && (
+                <div className="space-y-3">
+                  {run?.intake_summary && (
+                    <div className="bg-[#EFEAE0] rounded-2xl p-5 border-l-4 border-[#1F3A2E]">
+                      <p className="text-[#1F3A2E] font-medium mb-1">{T.whatYouShared}</p>
+                      <p className="text-[#3D3D3D] text-base leading-relaxed">{tIntakeSummary ?? run.intake_summary}</p>
+                    </div>
+                  )}
+                  {(run?.video_analysis || isVideoPending(run)) && (
+                    <div className="bg-[#EFEAE0] rounded-2xl p-5 border-l-4 border-[#1F3A2E]">
+                      <p className="text-[#1F3A2E] font-medium mb-1 flex items-center gap-2">
+                        <span aria-hidden>🎥</span>
+                        <span>{T.whatVisibleInVideo}</span>
+                      </p>
+                      {run?.video_analysis ? (
+                        <p className="text-[#3D3D3D] text-base leading-relaxed whitespace-pre-wrap">
+                          {run.video_analysis}
+                        </p>
+                      ) : (
+                        <p className="text-[#6B7280] text-sm italic animate-pulse">
+                          {T.videoAnalysisPending}
+                        </p>
+                      )}
+                    </div>
+                  )}
                 </div>
               )}
 
@@ -582,29 +610,6 @@ function DashboardContent() {
                 ) : (
                   <p className="text-[#6B7280] text-sm italic animate-pulse">
                     Choosing expert…
-                  </p>
-                )}
-              </motion.div>
-            )}
-
-            {/* Visual Context — Twelve Labs video analysis */}
-            {(run?.video_analysis || isVideoPending(run)) && (
-              <motion.div
-                initial={{ opacity: 0, y: 10 }}
-                animate={{ opacity: 1, y: 0 }}
-                className="bg-[#EFEAE0] rounded-2xl p-5 border border-[#1F3A2E]/10 mb-6"
-              >
-                <p className="text-[#1F3A2E] font-medium mb-2 flex items-center gap-2">
-                  <span aria-hidden>🎥</span>
-                  <span>Visual Context (Twelve Labs)</span>
-                </p>
-                {run?.video_analysis ? (
-                  <p className="text-[#3D3D3D] text-base leading-relaxed whitespace-pre-wrap">
-                    {run.video_analysis}
-                  </p>
-                ) : (
-                  <p className="text-[#6B7280] text-sm italic animate-pulse">
-                    Video analysis in progress…
                   </p>
                 )}
               </motion.div>
