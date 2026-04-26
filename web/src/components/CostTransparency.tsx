@@ -15,12 +15,15 @@ interface CostRow {
   uninsured: string;
 }
 
+// Ranges below reflect California metro averages (LA / Bay Area / SD)
+// for 2024–2025. CA cash-pay and ER bills run noticeably higher than the
+// national medians most national charts cite.
 const COST_ROWS: CostRow[] = [
-  { key: "telehealth",   label: "Telehealth visit",          insured: null,       uninsured: "$0–$75 typical"         },
-  { key: "doctor",       label: "Doctor's office visit",     insured: "$25–$75",  uninsured: "$150–$300"              },
-  { key: "urgent_care",  label: "Urgent care",               insured: "$30–$150", uninsured: "$150–$400"              },
-  { key: "er",           label: "Emergency room",            insured: "$150–$500",uninsured: "$1,000–$3,000+"         },
-  { key: "pharmacy",     label: "Pharmacy / OTC medication", insured: null,       uninsured: "$5–$30 typical"         },
+  { key: "telehealth",   label: "Telehealth visit",          insured: null,       uninsured: "$40–$95 typical"        },
+  { key: "doctor",       label: "Doctor's office visit",     insured: "$25–$60",  uninsured: "$200–$450"              },
+  { key: "urgent_care",  label: "Urgent care",               insured: "$50–$150", uninsured: "$200–$500"              },
+  { key: "er",           label: "Emergency room",            insured: "$250–$700",uninsured: "$1,500–$5,000+"         },
+  { key: "pharmacy",     label: "Pharmacy / OTC medication", insured: null,       uninsured: "$8–$45 typical"         },
 ];
 
 const PATH_TO_KEY: Partial<Record<string, CareKey>> = {
@@ -52,8 +55,8 @@ export default function CostTransparency({ urgency, recommendedPath }: Props) {
     "Urgent care",                                                                                     // 10
     "Emergency room",                                                                                  // 11
     "Pharmacy / OTC medication",                                                                       // 12
-    "$0–$75 typical",                                                                                  // 13
-    "$5–$30 typical",                                                                                  // 14
+    "$40–$95 typical",                                                                                 // 13
+    "$8–$45 typical",                                                                                  // 14
   ], []);
   const t = useTranslate(STATIC_KEYS);
   const labelByKey: Record<CareKey, string> = {

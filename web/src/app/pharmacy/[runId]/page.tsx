@@ -399,10 +399,11 @@ export default function PharmacyPage() {
           {T.disclaimer}
         </div>
 
-        {/* Search form only shows when there's no cart yet AND no live search
-            in progress. If the user lands on this page after a previous run
-            already filled the cart, skip straight to the receipt view below. */}
-        {!started && cart.length === 0 ? (
+        {/* Search form when not yet started; live panels once started. The
+            cart (rendered further below) is also gated on `started` so the
+            page reads as a clean "click search → results appear" flow even
+            when the Fetch.ai bureau has pre-filled the DB in the background. */}
+        {!started ? (
           <motion.div
             initial={{ opacity: 0, y: 20 }}
             animate={{ opacity: 1, y: 0 }}
@@ -462,7 +463,7 @@ export default function PharmacyPage() {
                 : `Search CVS · Walgreens · GoodRx ($${totalBudget})`}
             </motion.button>
           </motion.div>
-        ) : started ? (
+        ) : (
           <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }}>
             <p className="text-[#6B7280] text-sm mb-4">
               {T.searchingFor} <strong className="text-[#3D3D3D]">{query}</strong> {T.acrossPharmacies}
@@ -520,7 +521,7 @@ export default function PharmacyPage() {
               ))}
             </div>
           </motion.div>
-        ) : null}
+        )}
 
         {/* Ranker sidebar — shows what the Ranker agent picked vs everything found */}
         {(rankerLoading || rankerItems.length > 0) && (
@@ -612,8 +613,12 @@ export default function PharmacyPage() {
           </motion.div>
         )}
 
-        {/* Cart */}
-        {cart.length > 0 && (
+        {/* Cart — hidden until user explicitly clicks Search. The Fetch.ai
+            bureau may have pre-filled `shopping_cart` in the background as
+            soon as the intake routed to "pharmacy"; we keep that data in the
+            DB but only reveal it after a user-initiated search this session,
+            so the demo flow always reads as "click search → results appear". */}
+        {started && cart.length > 0 && (
           <motion.div
             initial={{ opacity: 0, y: 20 }}
             animate={{ opacity: 1, y: 0 }}

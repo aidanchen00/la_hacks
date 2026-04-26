@@ -14,22 +14,25 @@ import WorldIDGate from "@/components/WorldIDGate";
 
 const SEX_OPTIONS = ["female", "male", "intersex", "prefer_not_to_say"] as const;
 
-// Empty form values keyed to UserProfile, used for both "no profile yet" and reset.
+// Default form values used when no profile exists yet. Pre-filled with a
+// realistic California demo persona (median Silver-tier PPO; mid-20s; mild
+// seasonal allergies) so the dashboard cost panel + intake routing have
+// something believable to work with out of the box. Users can edit any field.
 const EMPTY_FORM = {
   display_name: "",
-  age: "",
-  sex: "",
+  age: "28",
+  sex: "female",
   gender: "",
-  weight_lbs: "",
-  height_in: "",
-  allergies: "",
-  conditions: "",
-  medications: "",
-  insurance_provider: "",
-  insurance_member_id: "",
-  insurance_group_id: "",
-  deductible_total_usd: "",
-  plan_year_start: "",
+  weight_lbs: "140",
+  height_in: "65",                          // 5'5"
+  allergies: "Penicillin, seasonal pollen",
+  conditions: "Mild asthma",
+  medications: "Albuterol inhaler (as needed)",
+  insurance_provider: "Blue Shield of California — Silver PPO",
+  insurance_member_id: "BSC123456789",
+  insurance_group_id: "GRP-9876543",
+  deductible_total_usd: "1500",             // typical CA Silver-tier individual deductible
+  plan_year_start: "2026-01-01",
 };
 type FormState = typeof EMPTY_FORM;
 

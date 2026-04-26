@@ -436,12 +436,21 @@ export default function AltMedicinePage() {
         });
 
         (Object.entries(TRADITIONS) as [TraditionKey, TraditionData][]).forEach(([key, t]) => {
+          // Two-element marker: outer = Mapbox-controlled positioning (no
+          // transitions, no transforms of our own — Mapbox writes
+          // `transform: translate(...)` here every animation frame).
+          // Inner = our visual + hover-scale (transition is safe here).
           const el = document.createElement("div");
-          el.style.cssText = `width:48px;height:48px;background:${t.color};border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:22px;cursor:pointer;border:2px solid #FFFFFF;box-shadow:0 0 0 3px ${t.color}25, 0 4px 12px rgba(31,58,46,0.20);transition:transform 0.15s;`;
-          el.textContent = t.emoji;
+          el.style.cssText = "cursor:pointer;";
           el.title = t.label;
-          el.onmouseenter = () => { el.style.transform = "scale(1.15)"; };
-          el.onmouseleave = () => { el.style.transform = "scale(1)"; };
+
+          const inner = document.createElement("div");
+          inner.style.cssText = `width:48px;height:48px;background:${t.color};border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:22px;border:2px solid #FFFFFF;box-shadow:0 0 0 3px ${t.color}25, 0 4px 12px rgba(31,58,46,0.20);transition:transform 0.15s;will-change:transform;`;
+          inner.textContent = t.emoji;
+          el.appendChild(inner);
+
+          el.onmouseenter = () => { inner.style.transform = "scale(1.15)"; };
+          el.onmouseleave = () => { inner.style.transform = "scale(1)"; };
           el.onclick = () => { selectTradition(key, map); };
 
           new mgl.Marker({ element: el })

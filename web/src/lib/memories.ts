@@ -21,6 +21,20 @@ export const DEFAULT_MEMORY_PROMPT =
  */
 export const SEED_MEMORIES: Memory[] = [
   {
+    id: "seed-personal-1",
+    title: "My Memory 1",
+    src: "/memories/IMG_6067.jpeg",
+    seed: true,
+    createdAt: 0,
+  },
+  {
+    id: "seed-personal-2",
+    title: "My Memory 2",
+    src: "/memories/IMG_8686.jpeg",
+    seed: true,
+    createdAt: 0,
+  },
+  {
     id: "seed-forest",
     title: "Misty Forest",
     src: "https://images.unsplash.com/photo-1448375240586-882707db888b?w=1200&q=80",
@@ -120,9 +134,17 @@ function dataUrlToFile(dataUrl: string, filename = "memory.jpg"): File {
   return new File([bytes], filename, { type: mime });
 }
 
-/** Resolve any memory src (remote URL or data URL) into a File Odyssey can consume */
+/** Resolve any memory src (remote URL, data URL, or /public path) into a File Odyssey can consume */
 export async function resolveMemorySrc(src: string): Promise<File> {
   if (src.startsWith("data:")) return dataUrlToFile(src);
+  // Local files served from /public — fetch directly, no proxy needed.
+  if (src.startsWith("/")) {
+    const res = await fetch(src);
+    if (!res.ok) throw new Error(`Failed to fetch local memory (${res.status})`);
+    const blob = await res.blob();
+    const filename = src.split("/").pop() || "memory.jpg";
+    return new File([blob], filename, { type: blob.type || "image/jpeg" });
+  }
   const res = await fetch(`/api/memories/proxy?url=${encodeURIComponent(src)}`);
   if (!res.ok) throw new Error(`Failed to fetch memory image (${res.status})`);
   const data = await res.json();
