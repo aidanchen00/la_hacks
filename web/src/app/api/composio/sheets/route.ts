@@ -16,10 +16,19 @@ export async function POST(req: NextRequest) {
 
   if (!sheetsId) return NextResponse.json({ saved: false, error: "PRANA_SHEETS_ID (or legacy DOMUS_SHEETS_ID) not set" });
 
+  // Column order MUST match the spreadsheet's header row exactly:
+  // A: run_id | B: timestamp | C: user_email | D: summary | E: symptoms |
+  // F: urgency | G: recommended_path | H: next_actions | I: disclaimers
   const values = [
-    row.run_id ?? "", row.timestamp ?? new Date().toISOString(), row.user_email ?? "",
-    row.transcript ?? "", row.summary ?? "", row.symptoms ?? "",
-    row.urgency ?? "", row.recommended_path ?? "", row.next_actions ?? "", row.disclaimers ?? "",
+    row.run_id ?? "",
+    row.timestamp ?? new Date().toISOString(),
+    row.user_email ?? "",
+    row.summary ?? "",
+    row.symptoms ?? "",
+    row.urgency ?? "",
+    row.recommended_path ?? "",
+    row.next_actions ?? "",
+    row.disclaimers ?? "",
   ];
 
   try {
@@ -31,7 +40,7 @@ export async function POST(req: NextRequest) {
       userId: entityId,
       arguments: {
         spreadsheet_id: sheetsId,
-        range: "Sheet1!A:J",
+        range: "Sheet1!A:I",
         value_input_option: "USER_ENTERED",
         insert_data_option: "INSERT_ROWS",
         values: [values],
