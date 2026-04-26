@@ -173,6 +173,10 @@ def init_db() -> None:
         ("runs", "source TEXT NOT NULL DEFAULT 'web'"),
         ("runs", "telegram_user_id TEXT"),
         ("runs", "telegram_chat_id TEXT"),
+        ("runs", "video_analysis TEXT"),
+        ("runs", "twelve_labs_video_id TEXT"),
+        ("runs", "expert_route TEXT"),
+        ("runs", "expert_rationale TEXT"),
     ):
         try:
             conn.execute(f"ALTER TABLE {table} ADD COLUMN {col_def}")
@@ -264,6 +268,32 @@ def upsert_routing_decision(d: Dict[str, Any]) -> None:
     conn.execute(
         "UPDATE runs SET status = 'routed', updated_at = datetime('now') WHERE id = ?",
         (d["run_id"],),
+    )
+    conn.commit()
+    conn.close()
+
+
+def update_run_video(run_id: str, analysis: Optional[str], twelve_labs_video_id: Optional[str]) -> None:
+    """Persist Twelve Labs analysis text + video id onto the run row."""
+    conn = get_conn()
+    conn.execute(
+        """UPDATE runs
+           SET video_analysis = ?, twelve_labs_video_id = ?, updated_at = datetime('now')
+           WHERE id = ?""",
+        (analysis, twelve_labs_video_id, run_id),
+    )
+    conn.commit()
+    conn.close()
+
+
+def update_run_expert(run_id: str, expert: Optional[str], rationale: Optional[str]) -> None:
+    """Persist the MoE-router decision (expert label + one-line rationale)."""
+    conn = get_conn()
+    conn.execute(
+        """UPDATE runs
+           SET expert_route = ?, expert_rationale = ?, updated_at = datetime('now')
+           WHERE id = ?""",
+        (expert, rationale, run_id),
     )
     conn.commit()
     conn.close()

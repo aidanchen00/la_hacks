@@ -18,6 +18,8 @@ interface SessionInfo {
   error?: string;
   done?: boolean;
   mock?: boolean;
+  // BrowserUse JSON output blob (string OR parsed object) once the agent finishes.
+  output?: string | { items?: unknown[] } | null;
 }
 
 export default function PharmacyPage() {
@@ -44,6 +46,8 @@ export default function PharmacyPage() {
   const browserPollRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const cartPollRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const rankerPollRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  // Sessions whose extracted items have already been inserted into the cart.
+  const insertedRef = useRef<Set<string>>(new Set());
 
   useEffect(() => {
     if (!runId || runId === "no-run") return;
@@ -66,10 +70,22 @@ export default function PharmacyPage() {
 
   const refreshCart = useCallback(async () => {
     if (!runId || runId === "no-run") return;
+    // Prefer the Python /budget endpoint (it returns wallets + cart + session
+    // for full Fetch.ai-routed flows). Fall back to the Next.js /api/cart/<id>
+    // endpoint when there's no budget_session — that's the path our bridge
+    // takes for runs that never hit the bureau but had items inserted from
+    // BrowserUse output.
     try {
       const data = await getBudget(runId);
       setCart(data.cart ?? []);
-    } catch { /* no budget session yet */ }
+      return;
+    } catch { /* fall through to direct cart read */ }
+    try {
+      const r = await fetch(`/api/cart/${runId}`, { cache: "no-store" });
+      if (!r.ok) return;
+      const data = await r.json();
+      setCart(data.cart ?? []);
+    } catch { /* ignore */ }
   }, [runId]);
 
   useEffect(() => {
@@ -118,10 +134,28 @@ export default function PharmacyPage() {
           const u = data.sessions?.find((x: SessionInfo) => x.sessionId === s.sessionId);
           return u ? { ...s, ...u } : s;
         }));
+
+        // Bridge: any session that just finished with output gets its items
+        // pushed straight into the cart (bypasses Fetch.ai bureau).
+        for (const u of (data.sessions ?? []) as SessionInfo[]) {
+          if (!u.done || !u.output || insertedRef.current.has(u.sessionId)) continue;
+          insertedRef.current.add(u.sessionId);
+          let parsed: { items?: unknown[] } | null = null;
+          try {
+            parsed = typeof u.output === "string" ? JSON.parse(u.output) : (u.output as { items?: unknown[] });
+          } catch { /* malformed JSON, skip */ }
+          const items = parsed?.items;
+          if (!Array.isArray(items) || items.length === 0) continue;
+          fetch("/api/cart/insert", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ run_id: runId, agent: u.agent.toLowerCase(), platform: u.agent, items }),
+          }).then(() => refreshCart()).catch(() => { /* best-effort */ });
+        }
       } catch { /* ignore */ }
     }, 5000);
     return () => { if (browserPollRef.current) clearInterval(browserPollRef.current); };
-  }, [started, sessions]);
+  }, [started, sessions, runId, refreshCart]);
 
   // Stop active BrowserUse sessions on tab close (NOT on every sessions state update —
   // that was killing live streams the moment polling updated them).

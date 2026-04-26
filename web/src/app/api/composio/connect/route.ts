@@ -7,13 +7,15 @@ const TOOLKIT_SLUGS: Record<string, string[]> = {
   googlesheets: ["googlesheets", "google_sheets"],
   googlecalendar: ["googlecalendar", "google_calendar"],
   googledrive: ["googledrive", "google_drive"],
+  reddit: ["reddit"],
 };
 
-const TOOLKIT_TO_ENTITY_KEY: Record<string, "gmail" | "sheets" | "calendar" | "drive"> = {
+const TOOLKIT_TO_ENTITY_KEY: Record<string, "gmail" | "sheets" | "calendar" | "drive" | "reddit"> = {
   gmail: "gmail",
   googlesheets: "sheets",
   googlecalendar: "calendar",
   googledrive: "drive",
+  reddit: "reddit",
 };
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any

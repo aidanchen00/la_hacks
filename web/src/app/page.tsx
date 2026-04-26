@@ -22,6 +22,7 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { motion } from "motion/react";
 import { Clock, Globe, Settings, Check } from "lucide-react";
 import WorldIDGate from "@/components/WorldIDGate";
+import { VideoIntakeStep } from "@/components/VideoIntakeStep";
 
 type Lang = "en" | "es" | "zh";
 
@@ -165,14 +166,24 @@ function RecentSessions({ onClose }: { onClose: () => void }) {
                     <p className="text-[#3D3D3D] text-sm leading-relaxed flex-1 line-clamp-2">
                       {label.length > 80 ? label.slice(0, 80) + "…" : label}
                     </p>
-                    {run.urgency && (
-                      <span
-                        className="text-xs font-bold px-2.5 py-1 rounded-full whitespace-nowrap flex-shrink-0"
-                        style={{ color, background: color + "20" }}
-                      >
-                        {run.urgency}
-                      </span>
-                    )}
+                    <div className="flex items-center gap-1.5 flex-shrink-0">
+                      {run.has_video ? (
+                        <span
+                          title="Includes Twelve Labs video analysis"
+                          className="text-xs whitespace-nowrap"
+                        >
+                          🎥
+                        </span>
+                      ) : null}
+                      {run.urgency && (
+                        <span
+                          className="text-xs font-bold px-2.5 py-1 rounded-full whitespace-nowrap"
+                          style={{ color, background: color + "20" }}
+                        >
+                          {run.urgency}
+                        </span>
+                      )}
+                    </div>
                   </div>
                   <p className="text-[#6B7280] text-xs mt-2">
                     {date} · {pathLabel}
@@ -468,6 +479,9 @@ function VoiceIntake({ onShowHistory, language, onLanguageChange }: {
   const [started, setStarted] = useState(false);
   const [textMode, setTextMode] = useState(false);
   const [submitting, setSubmitting] = useState(false);
+  // Once /intake completes we hold the run_id here so the optional video step
+  // can render. After Skip/Upload the parent navigates to /dashboard.
+  const [pendingVideoRunId, setPendingVideoRunId] = useState<string | null>(null);
   const router = useRouter();
 
   // Persist verification across page navigations.
@@ -546,12 +560,16 @@ function VoiceIntake({ onShowHistory, language, onLanguageChange }: {
       }
 
       await session.end().catch(() => {});
-      router.push(`/dashboard?run_id=${run_id}`);
+      // Hand off to the optional video-recording step on the phone instead of
+      // navigating straight to the dashboard. The step's onDone callback owns
+      // the navigation so Skip and Upload both end up at the same place.
+      setSubmitting(false);
+      setPendingVideoRunId(run_id);
     } catch (e) {
       console.error("Failed to submit intake:", e);
       setSubmitting(false);
     }
-  }, [session, router]);
+  }, [session, nullifierHash]);
 
   useEffect(() => {
     if (started && !textMode) session.start().catch(console.error);
@@ -575,6 +593,19 @@ function VoiceIntake({ onShowHistory, language, onLanguageChange }: {
           Saving your intake summary…
         </motion.div>
       </div>
+    );
+  }
+
+  if (pendingVideoRunId) {
+    return (
+      <VideoIntakeStep
+        runId={pendingVideoRunId}
+        onDone={() => {
+          const id = pendingVideoRunId;
+          setPendingVideoRunId(null);
+          router.push(`/dashboard?run_id=${id}`);
+        }}
+      />
     );
   }
 

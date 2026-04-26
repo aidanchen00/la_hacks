@@ -245,13 +245,20 @@ export interface RunSummary {
   urgency: string | null;
   recommended_path: string | null;
   rd_summary: string | null;
+  has_video: number;            // 0 / 1 — set when video_analysis is non-null
+  expert_route: string | null;  // 'doctor' | 'alternative_medicine' | 'emergency' | null
 }
 
 export function getRecentRuns(limit = 200): RunSummary[] {
   // Only return runs that have been classified (have a routing_decision row).
+  // The CASE expression coalesces the optional `video_analysis` column — older
+  // DBs that pre-date the migration just report has_video=0.
   return getDb().prepare(`
     SELECT r.id, r.status, r.instruction, r.intake_summary, r.created_at,
-           rd.urgency, rd.recommended_path, rd.summary AS rd_summary
+           rd.urgency, rd.recommended_path, rd.summary AS rd_summary,
+           CASE WHEN r.video_analysis IS NOT NULL AND TRIM(r.video_analysis) != ''
+                THEN 1 ELSE 0 END AS has_video,
+           r.expert_route AS expert_route
     FROM runs r
     INNER JOIN routing_decisions rd ON rd.run_id = r.id
     ORDER BY r.created_at DESC

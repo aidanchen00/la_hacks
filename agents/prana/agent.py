@@ -238,90 +238,17 @@ def _db() -> sqlite3.Connection:
 
 
 def _ensure_schema() -> None:
-    """Create tables if they don't exist — so agent works without FastAPI running."""
-    conn = _db()
-    conn.executescript("""
-        CREATE TABLE IF NOT EXISTS runs (
-            id TEXT PRIMARY KEY,
-            user_id INTEGER,
-            status TEXT NOT NULL DEFAULT 'pending',
-            instruction TEXT,
-            intake_summary TEXT,
-            created_at TEXT NOT NULL DEFAULT (datetime('now')),
-            updated_at TEXT NOT NULL DEFAULT (datetime('now'))
-        );
-        CREATE TABLE IF NOT EXISTS routing_decisions (
-            run_id TEXT PRIMARY KEY,
-            urgency TEXT NOT NULL DEFAULT 'wellness',
-            recommended_path TEXT NOT NULL DEFAULT 'self_care',
-            summary TEXT,
-            next_actions TEXT NOT NULL DEFAULT '[]',
-            payment_required INTEGER NOT NULL DEFAULT 0,
-            payment_amount REAL NOT NULL DEFAULT 0,
-            requires_doctor_approval INTEGER NOT NULL DEFAULT 0,
-            rationale TEXT,
-            disclaimers TEXT NOT NULL DEFAULT '[]',
-            specialty TEXT,
-            location TEXT,
-            search_query TEXT,
-            created_at TEXT NOT NULL DEFAULT (datetime('now'))
-        );
-        CREATE TABLE IF NOT EXISTS agent_events (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            run_id TEXT NOT NULL,
-            agent_name TEXT,
-            event_type TEXT,
-            payload TEXT NOT NULL DEFAULT '{}',
-            timestamp TEXT NOT NULL DEFAULT (datetime('now'))
-        );
-        CREATE TABLE IF NOT EXISTS budget_sessions (
-            run_id TEXT PRIMARY KEY,
-            total_budget_usd REAL NOT NULL,
-            per_agent_usd REAL NOT NULL,
-            num_agents INTEGER NOT NULL DEFAULT 4,
-            agents_done INTEGER NOT NULL DEFAULT 0,
-            status TEXT NOT NULL DEFAULT 'allocating',
-            stripe_session_id TEXT,
-            checkout_url TEXT,
-            requester_address TEXT,
-            created_at TEXT NOT NULL DEFAULT (datetime('now')),
-            updated_at TEXT NOT NULL DEFAULT (datetime('now'))
-        );
-        CREATE TABLE IF NOT EXISTS agent_wallets (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            run_id TEXT NOT NULL,
-            agent_name TEXT NOT NULL,
-            allocated_usd REAL NOT NULL DEFAULT 0,
-            spent_usd REAL NOT NULL DEFAULT 0,
-            balance_usd REAL NOT NULL DEFAULT 0,
-            status TEXT NOT NULL DEFAULT 'pending',
-            funded_at TEXT,
-            updated_at TEXT NOT NULL DEFAULT (datetime('now')),
-            UNIQUE(run_id, agent_name)
-        );
-        CREATE TABLE IF NOT EXISTS shopping_cart (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            run_id TEXT NOT NULL,
-            agent_name TEXT NOT NULL,
-            platform TEXT NOT NULL,
-            item_name TEXT,
-            item_price REAL NOT NULL DEFAULT 0,
-            item_url TEXT,
-            in_stock INTEGER NOT NULL DEFAULT 1,
-            created_at TEXT NOT NULL DEFAULT (datetime('now'))
-        );
-        CREATE INDEX IF NOT EXISTS idx_runs_status ON runs(status);
-        CREATE INDEX IF NOT EXISTS idx_events_run ON agent_events(run_id);
-    """)
-    # Backfill columns for older DBs (sqlite has no IF NOT EXISTS for ADD COLUMN)
-    for col_def in ("specialty TEXT", "location TEXT", "search_query TEXT"):
-        try:
-            conn.execute(f"ALTER TABLE routing_decisions ADD COLUMN {col_def}")
-        except sqlite3.OperationalError:
-            pass
-    conn.commit()
-    conn.close()
-    logger.info("[db] Schema ensured")
+    """Bootstrap the SQLite schema by delegating to api.db.init_db.
+
+    Single source of truth: keeping the schema here in sync with api/db.py
+    repeatedly drifted (missing shopping_cart.item_description column,
+    missing ranker_selections / profiles / deductible_payments tables).
+    Now both runtimes — FastAPI and the prana uAgent — call the same
+    init_db, so it doesn't matter which one starts first.
+    """
+    from api.db import init_db
+    init_db()
+    logger.info("[db] Schema ensured (via api.db.init_db)")
 
 
 # Call once all helpers are defined

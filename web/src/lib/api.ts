@@ -23,6 +23,11 @@ export interface RunStatus {
   intake_summary: string | null;
   routing_decision: RoutingDecision | null;
   events_count: number;
+  created_at?: string;
+  video_analysis?: string | null;
+  twelve_labs_video_id?: string | null;
+  expert_route?: "doctor" | "alternative_medicine" | "emergency" | null;
+  expert_rationale?: string | null;
 }
 
 export interface Citation {
@@ -66,6 +71,26 @@ export interface RunSummary {
   urgency: string | null;
   recommended_path: string | null;
   rd_summary: string | null;
+  has_video?: number | boolean;
+  expert_route?: "doctor" | "alternative_medicine" | "emergency" | null;
+}
+
+export function postIntakeVideo(
+  runId: string,
+  blob: Blob,
+): Promise<{ ok: boolean; run_id: string; status: string }> {
+  const fd = new FormData();
+  fd.append("run_id", runId);
+  // Filename hint for the backend; extension is informational only.
+  const ext = blob.type.includes("webm") ? "webm" : "mp4";
+  fd.append("video", blob, `${runId}.${ext}`);
+  return fetch(`${BACKEND}/intake/video`, { method: "POST", body: fd }).then(async (r) => {
+    if (!r.ok) {
+      const txt = await r.text().catch(() => "");
+      throw new Error(`/intake/video → ${r.status} ${txt}`);
+    }
+    return r.json();
+  });
 }
 
 export function listRuns(): Promise<RunSummary[]> {

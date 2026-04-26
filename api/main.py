@@ -91,6 +91,12 @@ async def lifespan(app: FastAPI):
     init_db()
     stripe.api_key = STRIPE_SECRET_KEY
     logger.info("Database initialized")
+    # Bootstrap Twelve Labs index (no-op if TWELVE_LABS_API_KEY is missing).
+    try:
+        from api.twelvelabs_client import ensure_index
+        await ensure_index()
+    except Exception as e:
+        logger.warning(f"Twelve Labs bootstrap failed: {e}")
     yield
     logger.info("Prana API shutting down")
 
@@ -176,7 +182,128 @@ async def get_run_status(run_id: str):
         "intake_summary": run.get("intake_summary"),
         "routing_decision": rd,
         "events_count": len(events),
+        "created_at": run.get("created_at"),
+        "video_analysis": run.get("video_analysis"),
+        "twelve_labs_video_id": run.get("twelve_labs_video_id"),
+        "expert_route": run.get("expert_route"),
+        "expert_rationale": run.get("expert_rationale"),
     }
+
+
+# ---------------------------------------------------------------------------
+# Video intake (Twelve Labs)
+# ---------------------------------------------------------------------------
+
+@app.post("/intake/video")
+async def intake_video(
+    request: Request,
+):
+    """Multipart upload of a short symptom video.
+
+    Form fields:
+      - run_id   (str)  — existing voice-intake run to attach the video to
+      - video    (file) — mp4 or webm, 50 MB max
+
+    Returns immediately (202) and indexes/queries Twelve Labs in the background.
+    The laptop's history-page poll picks up `video_analysis` once it lands.
+    Returns 503 if Twelve Labs is not configured.
+    """
+    from api.db import get_run as _get_run, update_run_video, update_run_expert
+    from api.twelvelabs_client import (
+        is_enabled as tl_enabled,
+        upload_video as tl_upload,
+        poll_task as tl_poll,
+        generate as tl_generate,
+    )
+    from api.expert_router import route_expert
+
+    if not tl_enabled():
+        raise HTTPException(
+            status_code=503,
+            detail="Video understanding unavailable — TWELVE_LABS_API_KEY not configured.",
+        )
+
+    form = await request.form()
+    run_id = str(form.get("run_id") or "").strip()
+    upload = form.get("video")
+    if not run_id or upload is None or not hasattr(upload, "filename"):
+        raise HTTPException(status_code=400, detail="run_id and video file are required")
+    if _get_run(run_id) is None:
+        raise HTTPException(status_code=404, detail="Run not found")
+
+    # Read into memory with a hard 50 MB cap. Phone clips at 720p/15s are well
+    # under this; anything larger is almost certainly a misuse.
+    MAX_BYTES = 50 * 1024 * 1024
+    contents = await upload.read()
+    if len(contents) > MAX_BYTES:
+        raise HTTPException(status_code=413, detail="Video too large (50 MB max)")
+
+    upload_dir = "/tmp/prana-uploads"
+    os.makedirs(upload_dir, exist_ok=True)
+    ext = ".webm" if (upload.content_type or "").endswith("webm") else ".mp4"
+    file_path = os.path.join(upload_dir, f"{run_id}{ext}")
+    with open(file_path, "wb") as f:
+        f.write(contents)
+    logger.info(f"[video] run {run_id[:8]} saved {len(contents)} bytes → {file_path}")
+
+    insert_agent_event(run_id, "twelvelabs", "video_uploaded", {
+        "bytes": len(contents), "path": file_path,
+    })
+
+    asyncio.create_task(
+        _process_video(run_id, file_path, tl_upload, tl_poll, tl_generate,
+                        update_run_video, update_run_expert, route_expert)
+    )
+    return {"ok": True, "run_id": run_id, "status": "processing"}
+
+
+VIDEO_PROMPT = (
+    "Describe any medically relevant visual information in this video. "
+    "Look for: visible symptoms (rashes, swelling, discoloration, wounds, "
+    "posture issues), the patient's apparent age and demographics, "
+    "environmental context (home, hospital, outdoors), and any actions being "
+    "performed (touching an area in pain, demonstrating a symptom). If nothing "
+    "medically relevant is visible, say so. Keep response under 200 words."
+)
+
+
+async def _process_video(
+    run_id: str,
+    file_path: str,
+    tl_upload, tl_poll, tl_generate,
+    update_run_video, update_run_expert, route_expert,
+) -> None:
+    """Background task: Twelve Labs upload → poll → generate → expert route."""
+    try:
+        task_id = await tl_upload(file_path, run_id)
+        if not task_id:
+            update_run_video(run_id, "Video analysis failed during upload.", None)
+            return
+        video_id = await tl_poll(task_id, run_id, max_seconds=180)
+        if not video_id:
+            update_run_video(run_id, "Video analysis timed out — please retry", None)
+            return
+        analysis = await tl_generate(video_id, VIDEO_PROMPT, run_id)
+        if not analysis:
+            update_run_video(run_id, "Video analysis returned no content.", video_id)
+            return
+        update_run_video(run_id, analysis, video_id)
+        insert_agent_event(run_id, "twelvelabs", "video_analyzed", {
+            "video_id": video_id, "chars": len(analysis),
+        })
+
+        # MoE expert routing — combine voice intake + video analysis.
+        run = get_run(run_id) or {}
+        voice_summary = run.get("intake_summary") or run.get("instruction") or ""
+        expert, rationale = await route_expert(voice_summary, analysis)
+        update_run_expert(run_id, expert, rationale)
+        insert_agent_event(run_id, "expert_router", "expert_chosen", {
+            "expert": expert, "rationale": rationale,
+        })
+        logger.info(f"[video] run {run_id[:8]} done → expert={expert}")
+    except Exception as e:
+        logger.error(f"[video] run {run_id[:8]} processing failed: {e}")
+        update_run_video(run_id, f"Video analysis failed: {str(e)[:200]}", None)
 
 
 # ---------------------------------------------------------------------------

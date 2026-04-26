@@ -7,18 +7,20 @@
  *   COMPOSIO_AUTH_CONFIG_SHEETS   = ac_xxx
  *   COMPOSIO_AUTH_CONFIG_CALENDAR = ac_xxx
  *   COMPOSIO_AUTH_CONFIG_DRIVE    = ac_xxx
+ *   COMPOSIO_AUTH_CONFIG_REDDIT   = ca_xxx (Reddit uses the `ca_` prefix)
  *
  * Returns undefined when not set — the SDK then falls back to Composio's
  * built-in default OAuth app.
  */
 export function authConfigFor(
-  toolkit: "gmail" | "sheets" | "calendar" | "drive",
+  toolkit: "gmail" | "sheets" | "calendar" | "drive" | "reddit",
 ): string | undefined {
   const map: Record<string, string | undefined> = {
     gmail:    process.env.COMPOSIO_AUTH_CONFIG_GMAIL,
     sheets:   process.env.COMPOSIO_AUTH_CONFIG_SHEETS,
     calendar: process.env.COMPOSIO_AUTH_CONFIG_CALENDAR,
     drive:    process.env.COMPOSIO_AUTH_CONFIG_DRIVE,
+    reddit:   process.env.COMPOSIO_AUTH_CONFIG_REDDIT,
   };
   return map[toolkit];
 }

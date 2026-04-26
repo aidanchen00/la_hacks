@@ -8,3 +8,4 @@ uagents>=0.22.0
 uagents-core>=0.4.0
 python-telegram-bot>=20.7
 langdetect>=1.0.9
+python-multipart>=0.0.9
