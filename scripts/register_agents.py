@@ -22,19 +22,26 @@ from pathlib import Path
 import httpx
 from dotenv import load_dotenv
 
-load_dotenv(Path(__file__).resolve().parents[1] / ".env")
+# Pull env from BOTH locations — repo root .env (legacy) and web/.env.local
+# (current source of truth, shared with the Next.js app). web/.env.local wins
+# when both define the same key.
+_REPO = Path(__file__).resolve().parents[1]
+load_dotenv(_REPO / ".env")
+load_dotenv(_REPO / "web" / ".env.local", override=True)
 
 AGENTS = [
-    {"name": "prana",     "port": 8100},
+    {"name": "prana",        "port": 8100},
     {"name": "budget",       "port": 8102},
     {"name": "cvs",          "port": 8103},
     {"name": "walgreens",    "port": 8104},
     {"name": "goodrx",       "port": 8105},
     {"name": "amazon",       "port": 8106},
     {"name": "ranker",       "port": 8107},
-    {"name": "zocdoc",       "port": 8108},
     {"name": "healthgrades", "port": 8109},
     {"name": "solv",         "port": 8110},
+    {"name": "sheets",       "port": 8112},
+    {"name": "reddit",       "port": 8113},
+    {"name": "horoscope",    "port": 8114},
 ]
 
 CONNECT_TIMEOUT   = 120   # seconds to wait for each agent to come up

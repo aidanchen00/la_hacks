@@ -184,3 +184,48 @@ class AppointmentResult(Model):
     # listingUrl, acceptsInsurance — kept as Dict for forward compatibility.
     providers: List[Dict[str, Any]] = []
     error: Optional[str] = None
+
+
+# ---------------------------------------------------------------------------
+# Composio integration messages — wraps the Next.js Composio routes so each
+# Composio toolkit (Sheets, Reddit) is a discoverable Agentverse agent the
+# rest of the bureau can ctx.send() to.
+# ---------------------------------------------------------------------------
+
+class SheetsAppendRequest(Model):
+    """Anyone → sheets_agent: append one row to the configured Google Sheet."""
+    run_id: str
+    timestamp: str        # ISO 8601 — the request timestamp
+    summary: str = ""
+    symptoms: str = ""
+    urgency: str = ""
+    recommended_path: str = ""
+    next_actions: str = ""
+    disclaimers: str = ""
+    user_email: str = ""
+
+
+class SheetsAppendResult(Model):
+    """sheets_agent → caller: did the append land?"""
+    run_id: str
+    saved: bool
+    error: Optional[str] = None
+
+
+class RedditPostRequest(Model):
+    """Anyone → reddit_agent: post one self-text submission to a subreddit."""
+    run_id: str
+    subreddit: str        # without the "r/" prefix
+    title: str            # capped at 300 chars by the route
+    body: str             # markdown-supported
+    nsfw: bool = False
+    spoiler: bool = False
+
+
+class RedditPostResult(Model):
+    """reddit_agent → caller: posted URL or failure reason."""
+    run_id: str
+    posted: bool
+    url: Optional[str] = None
+    error: Optional[str] = None
+    reddit_not_connected: bool = False

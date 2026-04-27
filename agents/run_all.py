@@ -29,6 +29,9 @@ from agents.shopping.amazon_agent import amazon
 from agents.appointments.healthgrades_agent import healthgrades
 from agents.appointments.solv_agent import solv
 from agents.ranker.agent import ranker_agent
+from agents.composio.sheets_agent import sheets_agent
+from agents.composio.reddit_agent import reddit_agent
+from agents.horoscope.agent import horoscope_agent
 
 logging.basicConfig(
     level=logging.INFO,
@@ -48,6 +51,9 @@ def main():
     logger.info(f"  ranker        → {ranker_agent.address} (port 8107)")
     logger.info(f"  healthgrades  → {healthgrades.address} (port 8109)")
     logger.info(f"  solv          → {solv.address} (port 8110)")
+    logger.info(f"  sheets        → {sheets_agent.address} (port 8112)")
+    logger.info(f"  reddit        → {reddit_agent.address} (port 8113)")
+    logger.info(f"  horoscope     → {horoscope_agent.address} (port 8114)")
 
     bureau = Bureau(port=8111)
     bureau.add(prana)
@@ -59,6 +65,9 @@ def main():
     bureau.add(ranker_agent)
     bureau.add(healthgrades)
     bureau.add(solv)
+    bureau.add(sheets_agent)
+    bureau.add(reddit_agent)
+    bureau.add(horoscope_agent)
 
     logger.info("Bureau started. All agents listening.")
     bureau.run()

@@ -1,0 +1,17 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(git reflog *)",
+      "Bash(git gc *)",
+      "Bash(git commit -m ' *)",
+      "Bash(python3 -c \"import playwright; print\\('playwright installed:', playwright.__version__\\)\")",
+      "Bash(python3 -c \"from playwright.async_api import async_playwright; print\\('async_playwright OK'\\)\")",
+      "Bash(python3 -c ' *)",
+      "Bash(awk '{for\\(i=11;i<=NF;i++\\) printf \"%s \", $i; print \"\"}')",
+      "Bash(grep -n \"const \\\\|export\\\\|\\\\\\\\$\\\\|cost\\\\|price\\\\|estimate\" web/src/components/CostTransparency.tsx)",
+      "Bash(sqlite3 -header -column /Users/lily/Documents/la_hacks/prana.db \"SELECT run_id, urgency, recommended_path, substr\\(citations, 1, 80\\) as citations_preview FROM routing_decisions ORDER BY created_at DESC LIMIT 5\")",
+      "Bash(sqlite3 -header -column /Users/lily/Documents/la_hacks/prana.db \"SELECT substr\\(id,1,8\\) as id, substr\\(intake_summary,1,80\\) as summary FROM runs ORDER BY created_at DESC LIMIT 5\")",
+      "Bash(curl -sf http://localhost:8000/health)"
+    ]
+  }
+}

@@ -538,23 +538,52 @@ function DashboardContent() {
                       <p className="text-[#3D3D3D] text-base leading-relaxed">{tIntakeSummary ?? run.intake_summary}</p>
                     </div>
                   )}
-                  {(run?.video_analysis || isVideoPending(run)) && (
-                    <div className="bg-[#EFEAE0] rounded-2xl p-5 border-l-4 border-[#1F3A2E]">
-                      <p className="text-[#1F3A2E] font-medium mb-1 flex items-center gap-2">
-                        <span aria-hidden>🎥</span>
-                        <span>{T.whatVisibleInVideo}</span>
-                      </p>
-                      {run?.video_analysis ? (
-                        <p className="text-[#3D3D3D] text-base leading-relaxed whitespace-pre-wrap">
-                          {run.video_analysis}
-                        </p>
-                      ) : (
-                        <p className="text-[#6B7280] text-sm italic animate-pulse">
-                          {T.videoAnalysisPending}
-                        </p>
-                      )}
-                    </div>
-                  )}
+                  {(run?.video_analysis || isVideoPending(run)) && (() => {
+                    // Extract the predicted temperature line from the
+                    // analysis text so we can surface it as a prominent badge
+                    // (instead of buried inside the paragraph). Strips the
+                    // line from the body so it isn't shown twice.
+                    const raw = run?.video_analysis ?? "";
+                    const tempMatch = raw.match(/Predicted body temperature:\s*([\d.]+)\s*°?F\s*\(±\s*([\d.]+)\s*°?F\)/i);
+                    const predictedF = tempMatch ? parseFloat(tempMatch[1]) : null;
+                    const bandF = tempMatch ? parseFloat(tempMatch[2]) : null;
+                    const bodyText = tempMatch ? raw.replace(tempMatch[0], "").trim() : raw;
+                    // Color the temp chip by deviation from normal (98.6°F).
+                    const tempColor =
+                      predictedF == null ? "#6B7280" :
+                      predictedF >= 100.4 ? "#DC2626" :       // fever
+                      predictedF >= 99.5  ? "#EA580C" :       // low-grade
+                      predictedF <= 96.5  ? "#1D4ED8" :       // hypothermia
+                      "#16A34A";                              // normal-ish
+                    return (
+                      <div className="bg-[#EFEAE0] rounded-2xl p-5 border-l-4 border-[#1F3A2E]">
+                        <div className="flex items-center justify-between gap-3 mb-2 flex-wrap">
+                          <p className="text-[#1F3A2E] font-medium flex items-center gap-2 m-0">
+                            <span aria-hidden>🎥</span>
+                            <span>{T.whatVisibleInVideo}</span>
+                          </p>
+                          {predictedF != null && (
+                            <span
+                              className="inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-xs font-semibold whitespace-nowrap"
+                              style={{ background: `${tempColor}20`, color: tempColor }}
+                              title="Twelve Labs visual inference — not a medical reading"
+                            >
+                              🌡️ {predictedF.toFixed(1)}°F {bandF != null && `(±${bandF}°F)`}
+                            </span>
+                          )}
+                        </div>
+                        {run?.video_analysis ? (
+                          <p className="text-[#3D3D3D] text-base leading-relaxed whitespace-pre-wrap">
+                            {bodyText}
+                          </p>
+                        ) : (
+                          <p className="text-[#6B7280] text-sm italic animate-pulse">
+                            {T.videoAnalysisPending}
+                          </p>
+                        )}
+                      </div>
+                    );
+                  })()}
                 </div>
               )}
 
